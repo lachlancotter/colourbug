@@ -20,9 +20,11 @@ Our goal is to create **a little happy place** — somewhere to slow down, unwin
 
 ## Current state
 
-The app is an early SwiftUI starter and currently shows a “Hello, Colourbug!” screen. The template, palette, and painting interaction described above are project goals, not implemented features yet.
+The app currently opens on a textured paper canvas. Drag to pan and pinch to zoom; the paper grain stays fixed to the sheet as it moves. The bundled paper image moves with a view transform, keeping pan and zoom smooth. The template, palette, and painting interaction described above are project goals, not implemented features yet.
 
-## Run the starter app
+The bundled texture is `Colourbug/Resources/WatercolourWhisper.png`.
+
+## Run the app
 
 From this directory, run:
 
@@ -36,4 +38,4 @@ This builds the app, installs it on the first available iPad simulator, and open
 sudo xcodebuild -license
 ```
 
-The app code is currently in `Colourbug/ColourbugApp.swift`.
+The app entry point is `Colourbug/ColourbugApp.swift`. `Colourbug/PaperCanvas.swift` owns gestures, and `Colourbug/ImagePaperStrategy.swift` displays the textured sheet.

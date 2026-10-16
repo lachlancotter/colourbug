@@ -8,11 +8,17 @@
 
 /* Begin PBXBuildFile section */
 		A00000000000000000000001 /* ColourbugApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* ColourbugApp.swift */; };
+		A00000000000000000000013 /* PaperCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000011 /* PaperCanvas.swift */; };
+		A00000000000000000000016 /* WatercolourWhisper.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000015 /* WatercolourWhisper.png */; };
+		A0000000000000000000001E /* ImagePaperStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001D /* ImagePaperStrategy.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		A00000000000000000000002 /* ColourbugApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColourbugApp.swift; sourceTree = "<group>"; };
 		A00000000000000000000003 /* Colourbug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Colourbug.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000011 /* PaperCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperCanvas.swift; sourceTree = "<group>"; };
+		A00000000000000000000015 /* WatercolourWhisper.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = WatercolourWhisper.png; sourceTree = "<group>"; };
+		A0000000000000000000001D /* ImagePaperStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePaperStrategy.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -28,8 +34,19 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000002 /* ColourbugApp.swift */,
+				A00000000000000000000011 /* PaperCanvas.swift */,
+				A0000000000000000000001D /* ImagePaperStrategy.swift */,
+				A00000000000000000000018 /* Resources */,
 			);
 			path = Colourbug;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000018 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000015 /* WatercolourWhisper.png */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		A00000000000000000000006 /* Products */ = {
@@ -48,6 +65,7 @@
 			buildConfigurationList = A00000000000000000000008 /* Build configuration list for PBXNativeTarget "Colourbug" */;
 			buildPhases = (
 				A00000000000000000000009 /* Sources */,
+				A00000000000000000000017 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -96,10 +114,23 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000001 /* ColourbugApp.swift in Sources */,
+				A00000000000000000000013 /* PaperCanvas.swift in Sources */,
+				A0000000000000000000001E /* ImagePaperStrategy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A00000000000000000000017 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000016 /* WatercolourWhisper.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
 		A0000000000000000000000C /* Debug */ = {
