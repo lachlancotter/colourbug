@@ -8,6 +8,8 @@ struct PaperCanvas: UIViewRepresentable {
 
 final class PaperCanvasView: UIView, UIGestureRecognizerDelegate {
     private let paperSize = CGSize(width: 1_200, height: 900)
+    private let sheet = UIView()
+    private lazy var paint = PaintView(size: paperSize)
     private var scale: CGFloat = 1
     private var minimumScale: CGFloat = 0.3
     private var offset: CGPoint = .zero
@@ -18,17 +20,25 @@ final class PaperCanvasView: UIView, UIGestureRecognizerDelegate {
         super.init(frame: frame)
         backgroundColor = UIColor(red: 0.88, green: 0.86, blue: 0.82, alpha: 1)
         isOpaque = true
+        isMultipleTouchEnabled = true
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.minimumNumberOfTouches = 2
         pan.maximumNumberOfTouches = 2
+        pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         pan.delegate = self
         addGestureRecognizer(pan)
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        pinch.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         pinch.delegate = self
         addGestureRecognizer(pinch)
 
-        addSubview(paper.view)
+        sheet.bounds = CGRect(origin: .zero, size: paperSize)
+        sheet.isUserInteractionEnabled = false
+        sheet.addSubview(paper.view)
+        sheet.addSubview(paint)
+        addSubview(sheet)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -41,20 +51,37 @@ final class PaperCanvasView: UIView, UIGestureRecognizerDelegate {
             minimumScale = min(0.3, scale)
             hasLaidOut = true
         }
-        paper.view.frame = bounds
-        paper.update(in: bounds, scale: scale, offset: offset)
+        updateSheet()
     }
 
-    private func updatePaper() {
-        paper.update(in: bounds, scale: scale, offset: offset)
+    private func updateSheet() {
+        sheet.transform = CGAffineTransform(scaleX: scale, y: scale)
+        sheet.center = CGPoint(x: bounds.midX + offset.x, y: bounds.midY + offset.y)
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        paint.handleTouchesBegan(touches)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        paint.handleTouchesMoved(touches, event: event)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        paint.handleTouchesEnded(touches, event: event)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        paint.handleTouchesCancelled(touches)
     }
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard gesture.state == .began || gesture.state == .changed else { return }
         let translation = gesture.translation(in: self)
         offset.x += translation.x
         offset.y += translation.y
         gesture.setTranslation(.zero, in: self)
-        updatePaper()
+        updateSheet()
     }
 
     @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
@@ -69,7 +96,7 @@ final class PaperCanvasView: UIView, UIGestureRecognizerDelegate {
         )
         scale = nextScale
         gesture.scale = 1
-        updatePaper()
+        updateSheet()
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,

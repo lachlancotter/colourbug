@@ -11,6 +11,7 @@
 		A00000000000000000000013 /* PaperCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000011 /* PaperCanvas.swift */; };
 		A00000000000000000000016 /* WatercolourWhisper.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000015 /* WatercolourWhisper.png */; };
 		A0000000000000000000001E /* ImagePaperStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001D /* ImagePaperStrategy.swift */; };
+		A00000000000000000000020 /* PaintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001F /* PaintView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,6 +20,7 @@
 		A00000000000000000000011 /* PaperCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperCanvas.swift; sourceTree = "<group>"; };
 		A00000000000000000000015 /* WatercolourWhisper.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = WatercolourWhisper.png; sourceTree = "<group>"; };
 		A0000000000000000000001D /* ImagePaperStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePaperStrategy.swift; sourceTree = "<group>"; };
+		A0000000000000000000001F /* PaintView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaintView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -36,6 +38,7 @@
 				A00000000000000000000002 /* ColourbugApp.swift */,
 				A00000000000000000000011 /* PaperCanvas.swift */,
 				A0000000000000000000001D /* ImagePaperStrategy.swift */,
+				A0000000000000000000001F /* PaintView.swift */,
 				A00000000000000000000018 /* Resources */,
 			);
 			path = Colourbug;
@@ -116,6 +119,7 @@
 				A00000000000000000000001 /* ColourbugApp.swift in Sources */,
 				A00000000000000000000013 /* PaperCanvas.swift in Sources */,
 				A0000000000000000000001E /* ImagePaperStrategy.swift in Sources */,
+				A00000000000000000000020 /* PaintView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

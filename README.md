@@ -20,7 +20,7 @@ Our goal is to create **a little happy place** — somewhere to slow down, unwin
 
 ## Current state
 
-The app currently opens on a textured paper canvas. Drag to pan and pinch to zoom; the paper grain stays fixed to the sheet as it moves. The bundled paper image moves with a view transform, keeping pan and zoom smooth. The template, palette, and painting interaction described above are project goals, not implemented features yet.
+The app currently opens on a textured paper canvas. Drag one finger or an Apple Pencil on the paper to paint with a fixed blue brush. Use two fingers to pan or pinch to zoom; incidental finger contact does not interrupt a Pencil stroke. Paint and paper move together as one sheet. The template, palette, watercolour effects, and persistence described above are project goals, not implemented features yet.
 
 The bundled texture is `Colourbug/Resources/WatercolourWhisper.png`.
 
@@ -29,13 +29,13 @@ The bundled texture is `Colourbug/Resources/WatercolourWhisper.png`.
 From this directory, run:
 
 ```sh
-./run-simulator.sh
+./run.sh
 ```
 
-This builds the app, installs it on the first available iPad simulator, and opens it. Xcode and an iOS Simulator runtime are required. If Xcode's license has not been accepted on this Mac, an administrator must first run:
+This builds the app, installs it on the first available paired iPad, and opens it. The iPad must be connected, unlocked, and have Developer Mode enabled. To use an iPad simulator instead, run `./run.sh --simulator` (or `./run-simulator.sh`). Set `COLOURBUG_DEVICE_ID` to select a specific paired iPad. Xcode is required; the simulator option also needs an iOS Simulator runtime. If Xcode's license has not been accepted on this Mac, an administrator must first run:
 
 ```sh
 sudo xcodebuild -license
 ```
 
-The app entry point is `Colourbug/ColourbugApp.swift`. `Colourbug/PaperCanvas.swift` owns gestures, and `Colourbug/ImagePaperStrategy.swift` displays the textured sheet.
+The app entry point is `Colourbug/ColourbugApp.swift`. `Colourbug/PaperCanvas.swift` owns pan and zoom, `Colourbug/PaintView.swift` owns painting, and `Colourbug/ImagePaperStrategy.swift` displays the textured sheet.
