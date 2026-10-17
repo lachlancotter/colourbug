@@ -13,6 +13,7 @@
 		A0000000000000000000001E /* ImagePaperStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001D /* ImagePaperStrategy.swift */; };
 		A00000000000000000000020 /* PaintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001F /* PaintView.swift */; };
 		A00000000000000000000022 /* WatercolourRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000021 /* WatercolourRenderer.swift */; };
+		A00000000000000000000024 /* PaintingTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000023 /* PaintingTemplate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,6 +24,7 @@
 		A0000000000000000000001D /* ImagePaperStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePaperStrategy.swift; sourceTree = "<group>"; };
 		A0000000000000000000001F /* PaintView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaintView.swift; sourceTree = "<group>"; };
 		A00000000000000000000021 /* WatercolourRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatercolourRenderer.swift; sourceTree = "<group>"; };
+		A00000000000000000000023 /* PaintingTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaintingTemplate.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -42,6 +44,7 @@
 				A0000000000000000000001D /* ImagePaperStrategy.swift */,
 				A0000000000000000000001F /* PaintView.swift */,
 				A00000000000000000000021 /* WatercolourRenderer.swift */,
+				A00000000000000000000023 /* PaintingTemplate.swift */,
 				A00000000000000000000018 /* Resources */,
 			);
 			path = Colourbug;
@@ -124,6 +127,7 @@
 				A0000000000000000000001E /* ImagePaperStrategy.swift in Sources */,
 				A00000000000000000000020 /* PaintView.swift in Sources */,
 				A00000000000000000000022 /* WatercolourRenderer.swift in Sources */,
+				A00000000000000000000024 /* PaintingTemplate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

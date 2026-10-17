@@ -42,12 +42,14 @@ final class PaintView: UIView {
     private var smoothedForce: CGFloat = 1
     private var smoothedTilt: CGFloat = 0
     private var lastResponse = BrushResponse.neutral
-    private lazy var paint = WatercolourRenderer(size: bounds.size, host: self)
+    private let template: PaintingTemplate
+    private lazy var paint = WatercolourRenderer(size: bounds.size, host: self, template: template)
     private let contactSheen = CAGradientLayer()
     private var displayLink: CADisplayLink?
     private var lastTick: CFTimeInterval?
 
-    init(size: CGSize) {
+    init(size: CGSize, template: PaintingTemplate) {
+        self.template = template
         super.init(frame: CGRect(origin: .zero, size: size))
         backgroundColor = .clear
         isUserInteractionEnabled = false
@@ -287,7 +289,7 @@ final class PaintView: UIView {
         lastTick = link.timestamp
         paint.step(dt: Float(elapsed))
         paint.renderDirtyTiles()
-        if !paint.hasWetPaint {
+        if !paint.hasActivePaint {
             link.invalidate()
             displayLink = nil
             lastTick = nil
