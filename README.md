@@ -32,7 +32,7 @@ From this directory, run:
 ./run.sh
 ```
 
-This builds the app, installs it on the first available paired iPad, and opens it. The iPad must be connected, unlocked, and have Developer Mode enabled. To use an iPad simulator instead, run `./run.sh --simulator` (or `./run-simulator.sh`). Set `COLOURBUG_DEVICE_ID` to select a specific paired iPad. Xcode is required; the simulator option also needs an iOS Simulator runtime. If Xcode's license has not been accepted on this Mac, an administrator must first run:
+This builds the app, installs it on the first connected iPad, and opens it. In Conductor, use the **iPad** run script for the same action. The iPad must be connected, unlocked, and have Developer Mode enabled. To use an iPad simulator instead, run `./run.sh --simulator` (or `./run-simulator.sh`). Set `COLOURBUG_DEVICE_ID` to select a specific paired iPad. Xcode is required; the simulator option also needs an iOS Simulator runtime. If Xcode's license has not been accepted on this Mac, an administrator must first run:
 
 ```sh
 sudo xcodebuild -license
