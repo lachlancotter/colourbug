@@ -20,7 +20,7 @@ Our goal is to create **a little happy place** — somewhere to slow down, unwin
 
 ## Current state
 
-The app currently opens on a textured paper canvas. Drag one finger or an Apple Pencil on the paper to paint with a fixed blue brush. Use two fingers to pan or pinch to zoom; incidental finger contact does not interrupt a Pencil stroke. Paint and paper move together as one sheet. The template, palette, watercolour effects, and persistence described above are project goals, not implemented features yet.
+The app currently opens on a textured paper canvas. Drag one finger or an Apple Pencil on the paper to paint with a blue watercolour brush. Fresh paint spreads subtly and dries in about 1–2 seconds; crossing wet marks shares pigment, while dry marks remain underneath new paint. A long stroke gradually uses up water and pigment, paper grain becomes clearer as pigment settles, and Pencil force and tilt make small changes to the brush. Use two fingers to pan or pinch to zoom; incidental finger contact does not interrupt a Pencil stroke. Paint and paper move together as one sheet. The template, palette, and persistence described above are project goals, not implemented features yet.
 
 The bundled texture is `Colourbug/Resources/WatercolourWhisper.png`.
 
@@ -38,4 +38,4 @@ This builds the app, installs it on the first available paired iPad, and opens i
 sudo xcodebuild -license
 ```
 
-The app entry point is `Colourbug/ColourbugApp.swift`. `Colourbug/PaperCanvas.swift` owns pan and zoom, `Colourbug/PaintView.swift` owns painting, and `Colourbug/ImagePaperStrategy.swift` displays the textured sheet.
+The app entry point is `Colourbug/ColourbugApp.swift`. `Colourbug/PaperCanvas.swift` owns pan and zoom, `Colourbug/PaintView.swift` owns painting input, `Colourbug/WatercolourRenderer.swift` simulates and draws paint, and `Colourbug/ImagePaperStrategy.swift` displays the textured sheet.
