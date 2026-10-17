@@ -9,12 +9,18 @@ final class WatercolourRenderer {
     private static let edgeFeather: Float = 8
     private static let edgeSettlingRate: Float = 0.3
     private static let pigmentMixingRate: Float = 3.0
-    private static let evaporationRate: Float = 0.85
-    private static let reworkWindow: CFTimeInterval = 1.5
+    private static let evaporationRate: Float = 0.42
+    private static let outsidePigmentFadeRate: Float = 1.0
+    private static let visiblePigmentThreshold: Float = 0.001
+    private static let reworkWindow: CFTimeInterval = 2.5
     private static let surroundingCells = [(-1, -1), (0, -1), (1, -1),
                                             (-1, 0),            (1, 0),
                                             (-1, 1),  (0, 1),   (1, 1)]
     private static let flowNeighbours = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+    private enum CellPaintability: UInt8 {
+        case unknown, outside, inside
+    }
 
     private final class Tile {
         let width: Int
@@ -53,14 +59,18 @@ final class WatercolourRenderer {
     private let tooth: [Float]
     private let grain: [UInt8]
     private let paperWidth: Int
+    private let template: PaintingTemplate
+    private var cellPaintability: [CellPaintability]
 
-    var hasWetPaint: Bool { !active.isEmpty }
+    var hasActivePaint: Bool { !active.isEmpty }
 
-    init(size: CGSize, host: UIView) {
+    init(size: CGSize, host: UIView, template: PaintingTemplate) {
         width = Int(ceil(size.width / Self.cellSize))
         height = Int(ceil(size.height / Self.cellSize))
         tilesAcross = Int(ceil(Double(width) / Double(Self.tileSide)))
         self.host = host
+        self.template = template
+        cellPaintability = Array(repeating: .unknown, count: width * height)
         paperWidth = Int(ceil(size.width))
         let texture = Self.makeGrain(width: paperWidth, height: Int(ceil(size.height)))
         grain = texture
@@ -116,7 +126,8 @@ final class WatercolourRenderer {
                 let acceptedPigment = min(pigmentAmount,
                                           max(pigmentAmount * 0.08,
                                               concentration * tile.water[local] - wetPigment))
-                let fixedFraction = settledFraction * (1 - wetness)
+                let fixedFraction = isPaintable(x: x, y: y)
+                    ? settledFraction * (1 - wetness) : 0
                 tile.mobile[local] += acceptedPigment * (1 - fixedFraction)
                 tile.settled[local] += acceptedPigment * fixedFraction
                 active.insert(y * width + x)
@@ -140,6 +151,7 @@ final class WatercolourRenderer {
             guard let (tile, local, _) = cell(x: x, y: y, create: false) else { continue }
             let water = tile.water[local]
             guard water > 0 else { continue }
+            let paintable = isPaintable(x: x, y: y)
             let paper = absorption[key]
             let paperTooth = tooth[key]
             let evaporation = min(water, dt * Self.evaporationRate * (0.72 + 0.38 * paper))
@@ -155,9 +167,10 @@ final class WatercolourRenderer {
                 wetNeighbours += min(1, other.water[position] / 0.08)
             }
             let boundary = 1 - wetNeighbours / 8
-            let settling = min(1, dt * (0.12 + 0.15 * paper + 0.35 * paperTooth
-                                          + 0.25 * (1 - min(water, 1))
-                                          + Self.edgeSettlingRate * boundary))
+            let settling = paintable
+                ? min(1, dt * (0.12 + 0.15 * paper + 0.35 * paperTooth
+                                 + 0.25 * (1 - min(water, 1))
+                                 + Self.edgeSettlingRate * boundary)) : 0
             let amount = tile.mobile[local] * settling
             pigmentDelta[key, default: 0] -= amount
             settledDelta[key, default: 0] += amount
@@ -213,7 +226,22 @@ final class WatercolourRenderer {
             if wasDry && tile.water[local] >= Self.wetThreshold {
                 reworkRecentDry(in: tile, at: local, x: x, y: y, now: now)
             }
-            if tile.water[local] < Self.wetThreshold {
+            if !isPaintable(x: x, y: y) {
+                // Pigment on the masked surface remains visible briefly, then vanishes.
+                // It never enters the permanent dry layer, even after its water is gone.
+                let fade = exp(-Self.outsidePigmentFadeRate * dt)
+                tile.mobile[local] = (tile.mobile[local] + tile.settled[local]) * fade
+                tile.settled[local] = 0
+                if tile.mobile[local] < Self.visiblePigmentThreshold {
+                    tile.mobile[local] = 0
+                }
+                if tile.water[local] < Self.wetThreshold {
+                    tile.water[local] = 0
+                }
+                if tile.mobile[local] > 0 || tile.water[local] > 0 {
+                    active.insert(key)
+                }
+            } else if tile.water[local] < Self.wetThreshold {
                 if tile.recentDry[local] > 0,
                    now - tile.driedAt[local] > Self.reworkWindow {
                     tile.dry[local] += tile.recentDry[local]
@@ -300,14 +328,18 @@ final class WatercolourRenderer {
                 let bottomMass = massField[bottomLeft] * (1 - fx) + massField[bottomRight] * fx
                 let mass = topMass * (1 - fy) + bottomMass * fy
                 guard mass > 0 else { continue }
+                let sheetX = originX * Self.pixelsPerCell + x
+                let sheetY = originY * Self.pixelsPerCell + y
+                if !wet && !template.isPaintable(at: CGPoint(x: CGFloat(sheetX) + 0.5,
+                                                             y: CGFloat(sheetY) + 0.5)) {
+                    continue
+                }
                 let topSettled = settledField[topLeft] * (1 - fx) + settledField[topRight] * fx
                 let bottomSettled = settledField[bottomLeft] * (1 - fx) + settledField[bottomRight] * fx
                 let settled = topSettled * (1 - fy) + bottomSettled * fy
                 let topWater = waterField[topLeft] * (1 - fx) + waterField[topRight] * fx
                 let bottomWater = waterField[bottomLeft] * (1 - fx) + waterField[bottomRight] * fx
                 let water = topWater * (1 - fy) + bottomWater * fy
-                let sheetX = originX * Self.pixelsPerCell + x
-                let sheetY = originY * Self.pixelsPerCell + y
                 let paper = Float(grain[sheetY * paperWidth + sheetX]) / 255
                 // Mobile paint reads as a smooth wash; paper tooth appears as it settles.
                 let wash = max(0, mass - settled) * (0.9 + 0.12 * paper)
@@ -352,6 +384,27 @@ final class WatercolourRenderer {
                 else { dirtyTiles.insert(key) }
             }
         }
+    }
+
+    private func isPaintable(x: Int, y: Int) -> Bool {
+        let index = y * width + x
+        if cellPaintability[index] != .unknown {
+            return cellPaintability[index] == .inside
+        }
+
+        // Match the pixel centers used when clipping the permanent dry layer.
+        for pixelY in 0..<Self.pixelsPerCell {
+            for pixelX in 0..<Self.pixelsPerCell {
+                let point = CGPoint(x: CGFloat(x * Self.pixelsPerCell + pixelX) + 0.5,
+                                    y: CGFloat(y * Self.pixelsPerCell + pixelY) + 0.5)
+                if template.isPaintable(at: point) {
+                    cellPaintability[index] = .inside
+                    return true
+                }
+            }
+        }
+        cellPaintability[index] = .outside
+        return false
     }
 
     private func cell(x: Int, y: Int, create: Bool) -> (Tile, Int, Int)? {

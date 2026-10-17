@@ -7,9 +7,10 @@ struct PaperCanvas: UIViewRepresentable {
 }
 
 final class PaperCanvasView: UIView, UIGestureRecognizerDelegate {
-    private let paperSize = CGSize(width: 1_200, height: 900)
+    private let template = PaintingTemplate.sampleStar
+    private var paperSize: CGSize { template.size }
     private let sheet = UIView()
-    private lazy var paint = PaintView(size: paperSize)
+    private lazy var paint = PaintView(size: paperSize, template: template)
     private var scale: CGFloat = 1
     private var minimumScale: CGFloat = 0.3
     private var offset: CGPoint = .zero
@@ -38,6 +39,14 @@ final class PaperCanvasView: UIView, UIGestureRecognizerDelegate {
         sheet.isUserInteractionEnabled = false
         sheet.addSubview(paper.view)
         sheet.addSubview(paint)
+        for area in template.paintableAreas {
+            let outline = CAShapeLayer()
+            outline.path = area.path
+            outline.fillColor = UIColor.clear.cgColor
+            outline.strokeColor = UIColor(red: 0.38, green: 0.33, blue: 0.29, alpha: 0.65).cgColor
+            outline.lineWidth = 2
+            sheet.layer.addSublayer(outline)
+        }
         addSubview(sheet)
     }
 
