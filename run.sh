@@ -14,13 +14,12 @@ case "${1:---ipad}" in
             device_list=$(mktemp)
             trap 'rm -f "$device_list"' EXIT
             xcrun devicectl list devices \
-                --filter "State == 'available (paired)' AND hardwareProperties.deviceType == 'iPad'" \
+                --filter "hardwareProperties.deviceType == 'iPad' AND connectionProperties.tunnelState == 'connected'" \
                 --json-output "$device_list" >/dev/null
-            device_id=$(plutil -extract result.devices.0.hardwareProperties.udid raw \
-                -o - "$device_list" 2>/dev/null || true)
+            device_id=$(jq -r '.result.devices[0].hardwareProperties.udid // empty' "$device_list")
         fi
         if [[ -z "$device_id" ]]; then
-            echo "No paired iPad is available. Connect and unlock an iPad, or run ./run.sh --simulator." >&2
+            echo "No connected iPad is available. Connect and unlock an iPad, or run ./run.sh --simulator." >&2
             exit 1
         fi
 
