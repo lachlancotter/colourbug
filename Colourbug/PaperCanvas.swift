@@ -1,16 +1,82 @@
 import SwiftUI
 import UIKit
 
+struct PaintColour: Identifiable, Equatable {
+    let name: String
+    let red: Float
+    let green: Float
+    let blue: Float
+
+    var id: String { name }
+    var displayColour: Color { Color(red: Double(red), green: Double(green), blue: Double(blue)) }
+    var pigment: SIMD4<Float> { SIMD4(red, green, blue, 1) }
+
+    static let palette: [PaintColour] = [
+        PaintColour(name: "Blue", red: 0.13, green: 0.37, blue: 0.86),
+        PaintColour(name: "Coral", red: 0.85, green: 0.28, blue: 0.28),
+        PaintColour(name: "Orange", red: 0.92, green: 0.47, blue: 0.16),
+        PaintColour(name: "Gold", red: 0.80, green: 0.62, blue: 0.12),
+        PaintColour(name: "Green", red: 0.20, green: 0.55, blue: 0.34),
+        PaintColour(name: "Violet", red: 0.52, green: 0.34, blue: 0.70)
+    ]
+}
+
+struct PaintingScreen: View {
+    @State private var selectedColour = PaintColour.palette[0]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PaperCanvas(selectedColour: selectedColour)
+            HStack(spacing: 18) {
+                ForEach(PaintColour.palette) { colour in
+                    Button {
+                        selectedColour = colour
+                    } label: {
+                        Circle()
+                            .fill(colour.displayColour)
+                            .frame(width: 46, height: 46)
+                            .padding(5)
+                            .overlay {
+                                Circle()
+                                    .strokeBorder(selectedColour == colour ? Color(red: 0.29, green: 0.26, blue: 0.23) : .clear,
+                                                  lineWidth: 2)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(colour.name) paint")
+                    .accessibilityValue(selectedColour == colour ? "Selected" : "")
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(Color(red: 0.96, green: 0.94, blue: 0.90))
+        }
+        .ignoresSafeArea(edges: .top)
+    }
+}
+
 struct PaperCanvas: UIViewRepresentable {
-    func makeUIView(context: Context) -> PaperCanvasView { PaperCanvasView() }
-    func updateUIView(_ uiView: PaperCanvasView, context: Context) {}
+    let selectedColour: PaintColour
+
+    func makeUIView(context: Context) -> PaperCanvasView {
+        let view = PaperCanvasView()
+        view.selectedColour = selectedColour.pigment
+        return view
+    }
+
+    func updateUIView(_ uiView: PaperCanvasView, context: Context) {
+        uiView.selectedColour = selectedColour.pigment
+    }
 }
 
 final class PaperCanvasView: UIView, UIGestureRecognizerDelegate {
-    private let template = PaintingTemplate.sampleStar
+    private let template = PaintingTemplate.sampleFlower
     private var paperSize: CGSize { template.size }
     private let sheet = UIView()
     private lazy var paint = PaintView(size: paperSize, template: template)
+    var selectedColour: SIMD4<Float> = PaintColour.palette[0].pigment {
+        didSet { paint.selectedColour = selectedColour }
+    }
     private var scale: CGFloat = 1
     private var minimumScale: CGFloat = 0.3
     private var offset: CGPoint = .zero

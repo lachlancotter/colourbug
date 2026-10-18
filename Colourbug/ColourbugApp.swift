@@ -4,8 +4,7 @@ import SwiftUI
 struct ColourbugApp: App {
     var body: some Scene {
         WindowGroup {
-            PaperCanvas()
-                .ignoresSafeArea()
+            PaintingScreen()
                 .preferredColorScheme(.light)
         }
     }

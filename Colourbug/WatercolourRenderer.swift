@@ -2,6 +2,8 @@ import UIKit
 
 // Water moves on a coarse grid; the image is reconstructed at one paper point per pixel.
 final class WatercolourRenderer {
+    // RGB is stored as colour weighted by pigment mass; w is the mass.
+    private typealias Pigment = SIMD4<Float>
     private static let cellSize: CGFloat = 2
     private static let tileSide = 64
     private static let pixelsPerCell = 2
@@ -28,10 +30,10 @@ final class WatercolourRenderer {
         let dryLayer = CALayer()
         let wetLayer = CALayer()
         var water: [Float]
-        var mobile: [Float]
-        var settled: [Float]
-        var dry: [Float]
-        var recentDry: [Float]
+        var mobile: [Pigment]
+        var settled: [Pigment]
+        var dry: [Pigment]
+        var recentDry: [Pigment]
         var driedAt: [CFTimeInterval]
 
         init(width: Int, height: Int) {
@@ -39,10 +41,10 @@ final class WatercolourRenderer {
             self.height = height
             let count = width * height
             water = Array(repeating: 0, count: count)
-            mobile = Array(repeating: 0, count: count)
-            settled = Array(repeating: 0, count: count)
-            dry = Array(repeating: 0, count: count)
-            recentDry = Array(repeating: 0, count: count)
+            mobile = Array(repeating: .zero, count: count)
+            settled = Array(repeating: .zero, count: count)
+            dry = Array(repeating: .zero, count: count)
+            recentDry = Array(repeating: .zero, count: count)
             driedAt = Array(repeating: 0, count: count)
         }
     }
@@ -81,7 +83,8 @@ final class WatercolourRenderer {
     }
 
     func deposit(at point: CGPoint, pigment: Float, water: Float, radius: CGFloat,
-                 direction: CGVector = .zero, settledFraction: Float = 0) {
+                 direction: CGVector = .zero, settledFraction: Float = 0,
+                 colour: SIMD4<Float>) {
         let now = CACurrentMediaTime()
         let reach = radius + 6
         let minX = max(0, Int(floor((point.x - reach) / Self.cellSize)))
@@ -122,14 +125,14 @@ final class WatercolourRenderer {
                 // A wet wash accepts pigment up to the brush's concentration instead
                 // of building a fresh opaque ridge on every overlapping stamp.
                 let concentration = pigmentAmount / max(addedWater, 0.001)
-                let wetPigment = tile.mobile[local] + tile.settled[local]
+                let wetPigment = tile.mobile[local].w + tile.settled[local].w
                 let acceptedPigment = min(pigmentAmount,
                                           max(pigmentAmount * 0.08,
                                               concentration * tile.water[local] - wetPigment))
                 let fixedFraction = isPaintable(x: x, y: y)
                     ? settledFraction * (1 - wetness) : 0
-                tile.mobile[local] += acceptedPigment * (1 - fixedFraction)
-                tile.settled[local] += acceptedPigment * fixedFraction
+                tile.mobile[local] += colour * (acceptedPigment * (1 - fixedFraction))
+                tile.settled[local] += colour * (acceptedPigment * fixedFraction)
                 active.insert(y * width + x)
                 markDirty(x: x, y: y, dry: false)
             }
@@ -140,8 +143,8 @@ final class WatercolourRenderer {
         guard !active.isEmpty else { return }
         let now = CACurrentMediaTime()
         var waterDelta: [Int: Float] = [:]
-        var pigmentDelta: [Int: Float] = [:]
-        var settledDelta: [Int: Float] = [:]
+        var pigmentDelta: [Int: Pigment] = [:]
+        var settledDelta: [Int: Pigment] = [:]
         var affected = active
         let current = Array(active)
 
@@ -172,20 +175,20 @@ final class WatercolourRenderer {
                                  + 0.25 * (1 - min(water, 1))
                                  + Self.edgeSettlingRate * boundary)) : 0
             let amount = tile.mobile[local] * settling
-            pigmentDelta[key, default: 0] -= amount
-            settledDelta[key, default: 0] += amount
+            pigmentDelta[key, default: .zero] -= amount
+            settledDelta[key, default: .zero] += amount
             markDirty(x: x, y: y, dry: false)
 
             var remainingWater = water - evaporation
-            var remainingPigment = tile.mobile[local] - amount
-            let concentration = tile.mobile[local] / max(water, 0.1)
+            var remainingPigment = tile.mobile[local].w - amount.w
+            let concentration = tile.mobile[local].w / max(water, 0.1)
             for (offsetX, offsetY) in Self.flowNeighbours {
                 let nx = x + offsetX
                 let ny = y + offsetY
                 guard nx >= 0, nx < width, ny >= 0, ny < height else { continue }
                 let neighbour = cell(x: nx, y: ny, create: false)
                 let otherWater = neighbour.map { $0.0.water[$0.1] } ?? 0
-                let otherPigment = neighbour.map { $0.0.mobile[$0.1] } ?? 0
+                let otherPigment = neighbour.map { $0.0.mobile[$0.1].w } ?? 0
                 let otherIsWet = otherWater >= Self.wetThreshold
                 let gradient = max(0, water - otherWater)
                 let rate: Float = otherIsWet ? 1.3 + 0.5 * (1 - paper) : 0.95
@@ -195,9 +198,9 @@ final class WatercolourRenderer {
                 let otherConcentration = otherPigment / max(otherWater, 0.1)
                 let mixing = otherIsWet ? dt * Self.pigmentMixingRate * min(water, otherWater)
                     * max(0, concentration - otherConcentration) : 0
-                let carried = min(remainingPigment, tile.mobile[local] * 0.22,
+                let carried = min(remainingPigment, tile.mobile[local].w * 0.22,
                                   concentration * flow * 0.8 + mixing
-                                  + dt * 0.2 * tile.mobile[local]
+                                  + dt * 0.2 * tile.mobile[local].w
                                   * max(0, tooth[ny * width + nx] - paperTooth)
                                   * min(1, otherWater))
                 guard flow > 0.0001 || carried > 0.0001 else { continue }
@@ -205,8 +208,9 @@ final class WatercolourRenderer {
                 let target = ny * width + nx
                 waterDelta[key, default: 0] -= flow
                 waterDelta[target, default: 0] += flow
-                pigmentDelta[key, default: 0] -= carried
-                pigmentDelta[target, default: 0] += carried
+                let movedPigment = tile.mobile[local] * (carried / max(tile.mobile[local].w, 0.0001))
+                pigmentDelta[key, default: .zero] -= movedPigment
+                pigmentDelta[target, default: .zero] += movedPigment
                 remainingWater -= flow
                 remainingPigment -= carried
                 affected.insert(target)
@@ -221,8 +225,9 @@ final class WatercolourRenderer {
             guard let (tile, local, _) = cell(x: x, y: y, create: false) else { continue }
             let wasDry = tile.water[local] == 0
             tile.water[local] = max(0, tile.water[local] + waterDelta[key, default: 0])
-            tile.mobile[local] = max(0, tile.mobile[local] + pigmentDelta[key, default: 0])
-            tile.settled[local] += settledDelta[key, default: 0]
+            let mobile = tile.mobile[local] + pigmentDelta[key, default: .zero]
+            tile.mobile[local] = mobile.w > 0 ? mobile : .zero
+            tile.settled[local] += settledDelta[key, default: .zero]
             if wasDry && tile.water[local] >= Self.wetThreshold {
                 reworkRecentDry(in: tile, at: local, x: x, y: y, now: now)
             }
@@ -231,26 +236,26 @@ final class WatercolourRenderer {
                 // It never enters the permanent dry layer, even after its water is gone.
                 let fade = exp(-Self.outsidePigmentFadeRate * dt)
                 tile.mobile[local] = (tile.mobile[local] + tile.settled[local]) * fade
-                tile.settled[local] = 0
-                if tile.mobile[local] < Self.visiblePigmentThreshold {
-                    tile.mobile[local] = 0
+                tile.settled[local] = .zero
+                if tile.mobile[local].w < Self.visiblePigmentThreshold {
+                    tile.mobile[local] = .zero
                 }
                 if tile.water[local] < Self.wetThreshold {
                     tile.water[local] = 0
                 }
-                if tile.mobile[local] > 0 || tile.water[local] > 0 {
+                if tile.mobile[local].w > 0 || tile.water[local] > 0 {
                     active.insert(key)
                 }
             } else if tile.water[local] < Self.wetThreshold {
-                if tile.recentDry[local] > 0,
+                if tile.recentDry[local].w > 0,
                    now - tile.driedAt[local] > Self.reworkWindow {
                     tile.dry[local] += tile.recentDry[local]
-                    tile.recentDry[local] = 0
+                    tile.recentDry[local] = .zero
                 }
                 tile.recentDry[local] += tile.mobile[local] + tile.settled[local]
                 tile.driedAt[local] = now
-                tile.mobile[local] = 0
-                tile.settled[local] = 0
+                tile.mobile[local] = .zero
+                tile.settled[local] = .zero
                 tile.water[local] = 0
                 markDirty(x: x, y: y, dry: true)
             } else {
@@ -263,14 +268,14 @@ final class WatercolourRenderer {
     private func reworkRecentDry(in tile: Tile, at local: Int, x: Int, y: Int,
                                  now: CFTimeInterval) {
         let pigment = tile.recentDry[local]
-        guard pigment > 0 else { return }
+        guard pigment.w > 0 else { return }
         if now - tile.driedAt[local] <= Self.reworkWindow {
             tile.mobile[local] += pigment
             markDirty(x: x, y: y, dry: true)
         } else {
             tile.dry[local] += pigment
         }
-        tile.recentDry[local] = 0
+        tile.recentDry[local] = .zero
     }
 
     func renderDirtyTiles() {
@@ -293,7 +298,7 @@ final class WatercolourRenderer {
         let originX = (tileKey % tilesAcross) * Self.tileSide
         let originY = (tileKey / tilesAcross) * Self.tileSide
         let paddedWidth = tile.width + 2
-        var massField = [Float](repeating: 0, count: paddedWidth * (tile.height + 2))
+        var massField = [Pigment](repeating: .zero, count: paddedWidth * (tile.height + 2))
         var settledField = [Float](repeating: 0, count: massField.count)
         var waterField = [Float](repeating: 0, count: massField.count)
         for y in -1...tile.height {
@@ -306,8 +311,9 @@ final class WatercolourRenderer {
                 let dilution = 1 - 0.32 * min(1, sampleTile.water[local])
                 let settled = wet ? sampleTile.settled[local]
                     : sampleTile.dry[local] + sampleTile.recentDry[local]
-                massField[position] = (wet ? sampleTile.mobile[local] * dilution : 0) + settled
-                settledField[position] = settled
+                let mobile: Pigment = wet ? sampleTile.mobile[local] * dilution : .zero
+                massField[position] = mobile + settled
+                settledField[position] = settled.w
                 waterField[position] = sampleTile.water[local]
             }
         }
@@ -327,7 +333,7 @@ final class WatercolourRenderer {
                 let topMass = massField[topLeft] * (1 - fx) + massField[topRight] * fx
                 let bottomMass = massField[bottomLeft] * (1 - fx) + massField[bottomRight] * fx
                 let mass = topMass * (1 - fy) + bottomMass * fy
-                guard mass > 0 else { continue }
+                guard mass.w > 0 else { continue }
                 let sheetX = originX * Self.pixelsPerCell + x
                 let sheetY = originY * Self.pixelsPerCell + y
                 if !wet && !template.isPaintable(at: CGPoint(x: CGFloat(sheetX) + 0.5,
@@ -342,13 +348,13 @@ final class WatercolourRenderer {
                 let water = topWater * (1 - fy) + bottomWater * fy
                 let paper = Float(grain[sheetY * paperWidth + sheetX]) / 255
                 // Mobile paint reads as a smooth wash; paper tooth appears as it settles.
-                let wash = max(0, mass - settled) * (0.9 + 0.12 * paper)
+                let wash = max(0, mass.w - settled) * (0.9 + 0.12 * paper)
                 let granulated = settled * (0.72 + 0.55 * paper)
                 let opacity = min(0.93, 1 - exp(-2.0 * (wash + granulated)))
                 let sheen = wet ? min(1, water) : 0
-                let red = 0.13 + 0.07 * sheen
-                let green = 0.37 + 0.09 * sheen
-                let blue = 0.86 + 0.05 * sheen
+                let red = min(1, mass.x / mass.w + 0.07 * sheen)
+                let green = min(1, mass.y / mass.w + 0.09 * sheen)
+                let blue = min(1, mass.z / mass.w + 0.05 * sheen)
                 let base = (y * imageWidth + x) * 4
                 pixels[base] = UInt8(clamping: Int(255 * red * opacity))
                 pixels[base + 1] = UInt8(clamping: Int(255 * green * opacity))
