@@ -1,36 +1,46 @@
 import SwiftUI
 import UIKit
+import Observation
+
+enum PaintColourID: String, Hashable {
+    case blue, coral, orange, gold, green, violet
+}
 
 struct PaintColour: Identifiable, Equatable {
+    let id: PaintColourID
     let name: String
     let red: Float
     let green: Float
     let blue: Float
 
-    var id: String { name }
     var displayColour: Color { Color(red: Double(red), green: Double(green), blue: Double(blue)) }
     var pigment: SIMD4<Float> { SIMD4(red, green, blue, 1) }
 
     static let palette: [PaintColour] = [
-        PaintColour(name: "Blue", red: 0.13, green: 0.37, blue: 0.86),
-        PaintColour(name: "Coral", red: 0.85, green: 0.28, blue: 0.28),
-        PaintColour(name: "Orange", red: 0.92, green: 0.47, blue: 0.16),
-        PaintColour(name: "Gold", red: 0.80, green: 0.62, blue: 0.12),
-        PaintColour(name: "Green", red: 0.20, green: 0.55, blue: 0.34),
-        PaintColour(name: "Violet", red: 0.52, green: 0.34, blue: 0.70)
+        PaintColour(id: .blue, name: "Blue", red: 0.13, green: 0.37, blue: 0.86),
+        PaintColour(id: .coral, name: "Coral", red: 0.85, green: 0.28, blue: 0.28),
+        PaintColour(id: .orange, name: "Orange", red: 0.92, green: 0.47, blue: 0.16),
+        PaintColour(id: .gold, name: "Gold", red: 0.80, green: 0.62, blue: 0.12),
+        PaintColour(id: .green, name: "Green", red: 0.20, green: 0.55, blue: 0.34),
+        PaintColour(id: .violet, name: "Violet", red: 0.52, green: 0.34, blue: 0.70)
     ]
 }
 
+@Observable
+final class PaintingSession {
+    var selectedColour = PaintColour.palette[0]
+}
+
 struct PaintingScreen: View {
-    @State private var selectedColour = PaintColour.palette[0]
+    @State private var session = PaintingSession()
 
     var body: some View {
         VStack(spacing: 0) {
-            PaperCanvas(selectedColour: selectedColour)
+            PaperCanvas(session: session)
             HStack(spacing: 18) {
                 ForEach(PaintColour.palette) { colour in
                     Button {
-                        selectedColour = colour
+                        session.selectedColour = colour
                     } label: {
                         Circle()
                             .fill(colour.displayColour)
@@ -38,13 +48,13 @@ struct PaintingScreen: View {
                             .padding(5)
                             .overlay {
                                 Circle()
-                                    .strokeBorder(selectedColour == colour ? Color(red: 0.29, green: 0.26, blue: 0.23) : .clear,
+                                    .strokeBorder(session.selectedColour == colour ? Color(red: 0.29, green: 0.26, blue: 0.23) : .clear,
                                                   lineWidth: 2)
                             }
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(colour.name) paint")
-                    .accessibilityValue(selectedColour == colour ? "Selected" : "")
+                    .accessibilityValue(session.selectedColour == colour ? "Selected" : "")
                 }
             }
             .frame(maxWidth: .infinity)
@@ -56,35 +66,30 @@ struct PaintingScreen: View {
 }
 
 struct PaperCanvas: UIViewRepresentable {
-    let selectedColour: PaintColour
+    let session: PaintingSession
 
     func makeUIView(context: Context) -> PaperCanvasView {
-        let view = PaperCanvasView()
-        view.selectedColour = selectedColour.pigment
-        return view
+        PaperCanvasView(session: session)
     }
 
-    func updateUIView(_ uiView: PaperCanvasView, context: Context) {
-        uiView.selectedColour = selectedColour.pigment
-    }
+    func updateUIView(_ uiView: PaperCanvasView, context: Context) {}
 }
 
 final class PaperCanvasView: UIView, UIGestureRecognizerDelegate {
     private let template = PaintingTemplate.sampleFlower
+    private let session: PaintingSession
     private var paperSize: CGSize { template.size }
     private let sheet = UIView()
-    private lazy var paint = PaintView(size: paperSize, template: template)
-    var selectedColour: SIMD4<Float> = PaintColour.palette[0].pigment {
-        didSet { paint.selectedColour = selectedColour }
-    }
+    private lazy var paint = PaintView(size: paperSize, template: template, session: session)
     private var scale: CGFloat = 1
     private var minimumScale: CGFloat = 0.3
     private var offset: CGPoint = .zero
     private var hasLaidOut = false
     private lazy var paper = ImagePaperStrategy(size: paperSize)
 
-    override init(frame: CGRect) {
-        super.init(frame: frame)
+    init(session: PaintingSession) {
+        self.session = session
+        super.init(frame: .zero)
         backgroundColor = UIColor(red: 0.88, green: 0.86, blue: 0.82, alpha: 1)
         isOpaque = true
         isMultipleTouchEnabled = true

@@ -1,4 +1,5 @@
 import UIKit
+import Observation
 
 // Touches arrive from PaperCanvasView, while paint coordinates stay fixed to the sheet.
 final class PaintView: UIView {
@@ -42,16 +43,18 @@ final class PaintView: UIView {
     private var smoothedForce: CGFloat = 1
     private var smoothedTilt: CGFloat = 0
     private var lastResponse = BrushResponse.neutral
-    var selectedColour = PaintColour.palette[0].pigment
-    private var strokeColour = PaintColour.palette[0].pigment
+    private var strokeColour = PaintColour.palette[0]
     private let template: PaintingTemplate
+    private let session: PaintingSession
+    private var activeOutlines: [CAShapeLayer] = []
     private lazy var paint = WatercolourRenderer(size: bounds.size, host: self, template: template)
     private let contactSheen = CAGradientLayer()
     private var displayLink: CADisplayLink?
     private var lastTick: CFTimeInterval?
 
-    init(size: CGSize, template: PaintingTemplate) {
+    init(size: CGSize, template: PaintingTemplate, session: PaintingSession) {
         self.template = template
+        self.session = session
         super.init(frame: CGRect(origin: .zero, size: size))
         backgroundColor = .clear
         isUserInteractionEnabled = false
@@ -68,9 +71,36 @@ final class PaintView: UIView {
         contactSheen.zPosition = 1
         contactSheen.isHidden = true
         layer.addSublayer(contactSheen)
+        for area in template.paintableAreas {
+            let outline = CAShapeLayer()
+            outline.path = area.path
+            outline.fillColor = UIColor.clear.cgColor
+            outline.lineWidth = 6
+            outline.lineJoin = .round
+            outline.zPosition = 0.5
+            layer.addSublayer(outline)
+            activeOutlines.append(outline)
+        }
+        observeSelection()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func observeSelection() {
+        withObservationTracking {
+            let colour = session.selectedColour
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for (area, outline) in zip(template.paintableAreas, activeOutlines) {
+                outline.isHidden = area.colourID != colour.id
+                outline.strokeColor = UIColor(red: CGFloat(colour.red), green: CGFloat(colour.green),
+                                              blue: CGFloat(colour.blue), alpha: 0.5).cgColor
+            }
+            CATransaction.commit()
+        } onChange: { [weak self] in
+            DispatchQueue.main.async { self?.observeSelection() }
+        }
+    }
 
     func handleTouchesBegan(_ touches: Set<UITouch>) {
         activeTouches.formUnion(touches)
@@ -94,7 +124,7 @@ final class PaintView: UIView {
         let point = touch.location(in: self)
         guard bounds.contains(point) else { return }
         paintingTouch = touch
-        strokeColour = selectedColour
+        strokeColour = session.selectedColour
         lastPoint = point
         pendingDeposits.removeAll(keepingCapacity: true)
         distanceSinceDeposit = 0
