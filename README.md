@@ -20,7 +20,7 @@ Our goal is to create **a little happy place** — somewhere to slow down, unwin
 
 ## Current state
 
-The app currently opens on a textured paper canvas with a sample star template. Drag one finger or an Apple Pencil on the paper to paint with a blue watercolour brush. Paint inside the star settles into the paper; paint outside it appears briefly, then fades away. Fresh paint spreads subtly and stays workable for several seconds; crossing wet marks shares pigment, while dry marks remain underneath new paint. A long stroke gradually uses up water and pigment, paper grain becomes clearer as pigment settles, and Pencil force and tilt make small changes to the brush. Use two fingers to pan or pinch to zoom; incidental finger contact does not interrupt a Pencil stroke. Paint and paper move together as one sheet. The palette and persistence described above are project goals, not implemented features yet.
+The app opens on a textured paper canvas with a flower template containing separate petals, a centre, stem, and leaves. Tap a colour in the palette below the canvas to load the brush, then drag one finger or an Apple Pencil on the paper to paint. Paint inside the outlined areas settles into the paper; paint outside them appears briefly, then fades away. Fresh paint spreads subtly and stays workable for several seconds; crossing wet marks mixes their colours, while dry marks remain underneath new paint. A long stroke gradually uses up water and pigment, paper grain becomes clearer as pigment settles, and Pencil force and tilt make small changes to the brush. Use two fingers to pan or pinch to zoom; incidental finger contact does not interrupt a Pencil stroke. Paint and paper move together as one sheet. Persistence remains a project goal.
 
 The bundled texture is `Colourbug/Resources/WatercolourWhisper.png`.
 
@@ -38,4 +38,4 @@ This builds the app, installs it on the first connected iPad, and opens it. In C
 sudo xcodebuild -license
 ```
 
-The app entry point is `Colourbug/ColourbugApp.swift`. `Colourbug/PaperCanvas.swift` owns pan and zoom, `Colourbug/PaintView.swift` owns painting input, `Colourbug/WatercolourRenderer.swift` simulates and draws paint, `Colourbug/PaintingTemplate.swift` defines the sample star, and `Colourbug/ImagePaperStrategy.swift` displays the textured sheet.
+The app entry point is `Colourbug/ColourbugApp.swift`. `Colourbug/PaperCanvas.swift` owns the palette, pan, and zoom; `Colourbug/PaintView.swift` owns painting input; `Colourbug/WatercolourRenderer.swift` simulates and draws paint; `Colourbug/PaintingTemplate.swift` defines the sample flower; and `Colourbug/ImagePaperStrategy.swift` displays the textured sheet.

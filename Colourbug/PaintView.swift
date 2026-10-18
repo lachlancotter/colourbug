@@ -42,6 +42,8 @@ final class PaintView: UIView {
     private var smoothedForce: CGFloat = 1
     private var smoothedTilt: CGFloat = 0
     private var lastResponse = BrushResponse.neutral
+    var selectedColour = PaintColour.palette[0].pigment
+    private var strokeColour = PaintColour.palette[0].pigment
     private let template: PaintingTemplate
     private lazy var paint = WatercolourRenderer(size: bounds.size, host: self, template: template)
     private let contactSheen = CAGradientLayer()
@@ -92,6 +94,7 @@ final class PaintView: UIView {
         let point = touch.location(in: self)
         guard bounds.contains(point) else { return }
         paintingTouch = touch
+        strokeColour = selectedColour
         lastPoint = point
         pendingDeposits.removeAll(keepingCapacity: true)
         distanceSinceDeposit = 0
@@ -153,7 +156,7 @@ final class PaintView: UIView {
             // A loaded brush makes a slightly fuller, richer first contact.
             paint.deposit(at: previous, pigment: 0.12 * lastResponse.pigment,
                           water: 0.3 * lastResponse.water,
-                          radius: firstContactRadius * lastResponse.width)
+                          radius: firstContactRadius * lastResponse.width, colour: strokeColour)
             hasPainted = true
         }
         var walked: CGFloat = 0
@@ -173,7 +176,8 @@ final class PaintView: UIView {
                 paint.deposit(at: position,
                               pigment: 0.06 * pigmentLoad * brush.pigment,
                               water: 0.11 * waterLoad * brush.water,
-                              radius: radius * brush.width, direction: direction)
+                              radius: radius * brush.width, direction: direction,
+                              colour: strokeColour)
             } else {
                 // The narrow, light tip expands to the steady brush width as it moves on.
                 let narrowRadius = tipRadius * brush.width
@@ -181,7 +185,7 @@ final class PaintView: UIView {
                 paint.deposit(at: position,
                               pigment: 0.028 * pigmentLoad * brush.pigment,
                               water: 0.09 * waterLoad * brush.water,
-                              radius: narrowRadius, direction: direction)
+                              radius: narrowRadius, direction: direction, colour: strokeColour)
                 pendingDeposits.append(PendingDeposit(
                     point: position, direction: direction,
                     tipRadius: narrowRadius, fullRadius: fullRadius,
@@ -191,7 +195,7 @@ final class PaintView: UIView {
                     let oldest = pendingDeposits.removeFirst()
                     paint.deposit(at: oldest.point, pigment: oldest.pigment,
                                   water: oldest.water, radius: oldest.fullRadius,
-                                  direction: oldest.direction)
+                                  direction: oldest.direction, colour: strokeColour)
                 }
             }
             distanceSinceDeposit = 0
@@ -214,7 +218,8 @@ final class PaintView: UIView {
                     : deposit.tipRadius + (deposit.fullRadius - deposit.tipRadius) * CGFloat(fraction)
                 paint.deposit(at: deposit.point, pigment: pigment,
                               water: deposit.water * (discardDot ? 1 : fraction),
-                              radius: radius, direction: deposit.direction)
+                              radius: radius, direction: deposit.direction,
+                              colour: strokeColour)
             }
             if !discardDot, let point = lastPoint {
                 // A little pigment remains at the centre as the contact area lifts away.
@@ -223,13 +228,14 @@ final class PaintView: UIView {
                 paint.deposit(at: point,
                               pigment: 0.22 * (0.35 + 0.65 * pigmentLoad) * lastResponse.pigment,
                               water: 0.2 * waterLoad * lastResponse.water,
-                              radius: 7 * lastResponse.width, settledFraction: 0.45)
+                              radius: 7 * lastResponse.width, settledFraction: 0.45,
+                              colour: strokeColour)
             }
             startAnimation()
         } else if !discardDot, let point = lastPoint {
             paint.deposit(at: point, pigment: 0.16 * lastResponse.pigment,
                           water: 0.8 * lastResponse.water,
-                          radius: brushWidth / 2 * lastResponse.width)
+                          radius: brushWidth / 2 * lastResponse.width, colour: strokeColour)
             startAnimation()
         }
         pendingDeposits.removeAll(keepingCapacity: true)
