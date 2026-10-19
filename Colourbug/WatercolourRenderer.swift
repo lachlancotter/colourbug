@@ -4,6 +4,21 @@ import UIKit
 final class WatercolourRenderer {
     // RGB is stored as colour weighted by pigment mass; w is the mass.
     private typealias Pigment = SIMD4<Float>
+    private struct AreaMask: Equatable {
+        var low: UInt64 = 0
+        var high: UInt64 = 0
+
+        var isEmpty: Bool { low == 0 && high == 0 }
+
+        mutating func insert(_ index: Int) {
+            if index < 64 { low |= UInt64(1) << index }
+            else { high |= UInt64(1) << (index - 64) }
+        }
+
+        func intersects(_ other: AreaMask) -> Bool {
+            low & other.low != 0 || high & other.high != 0
+        }
+    }
     private static let cellSize: CGFloat = 2
     private static let tileSide = 64
     private static let pixelsPerCell = 2
@@ -31,6 +46,9 @@ final class WatercolourRenderer {
         var dry: [Pigment]
         var recentDry: [Pigment]
         var driedAt: [CFTimeInterval]
+        // Off-group brush pigment is displayed above the paint, then fades away.
+        var spill: [Pigment]
+        var spillWater: [Float]
 
         init(width: Int, height: Int) {
             self.width = width
@@ -42,6 +60,8 @@ final class WatercolourRenderer {
             dry = Array(repeating: .zero, count: count)
             recentDry = Array(repeating: .zero, count: count)
             driedAt = Array(repeating: 0, count: count)
+            spill = Array(repeating: .zero, count: count)
+            spillWater = Array(repeating: 0, count: count)
         }
     }
 
@@ -51,6 +71,7 @@ final class WatercolourRenderer {
     private weak var host: UIView?
     private var tiles: [Int: Tile] = [:]
     private var active = Set<Int>()
+    private var activeSpill = Set<Int>()
     private var dirtyTiles = Set<Int>()
     private var dirtyDryTiles = Set<Int>()
     private let absorption: [Float]
@@ -59,13 +80,12 @@ final class WatercolourRenderer {
     private let paperWidth: Int
     private let paperHeight: Int
     private let template: PaintingTemplate
-    // Each bit represents an area touched by one of the cell's rendered pixels.
-    // Shared cells blend their areas' pigments; -1 means unresolved.
-    private var cellAreaMasks: [Int]
-    private let colourAreaMasks: [PaintColourID: Int]
-    private var pixelAreaIndices: [Int16]
+    // A cell can straddle several regions. Shared paint groups have one bit,
+    // which lets unlined sky and fur colours blend without an artificial seam.
+    private var cellAreaMasks: [AreaMask?]
+    private let colourAreaMasks: [PaintColourID: AreaMask]
 
-    var hasActivePaint: Bool { !active.isEmpty }
+    var hasActivePaint: Bool { !active.isEmpty || !activeSpill.isEmpty }
 
     init(size: CGSize, host: UIView, template: PaintingTemplate) {
         width = Int(ceil(size.width / Self.cellSize))
@@ -73,15 +93,14 @@ final class WatercolourRenderer {
         tilesAcross = Int(ceil(Double(width) / Double(Self.tileSide)))
         self.host = host
         self.template = template
-        cellAreaMasks = Array(repeating: -1, count: width * height)
-        var colourMasks: [PaintColourID: Int] = [:]
-        for (index, area) in template.paintableAreas.enumerated() {
-            colourMasks[area.colourID, default: 0] |= 1 << index
+        cellAreaMasks = Array(repeating: nil, count: width * height)
+        var colourMasks: [PaintColourID: AreaMask] = [:]
+        for area in template.paintableAreas {
+            colourMasks[area.colourID, default: AreaMask()].insert(area.maskIndex)
         }
         colourAreaMasks = colourMasks
         paperWidth = Int(ceil(size.width))
         paperHeight = Int(ceil(size.height))
-        pixelAreaIndices = Array(repeating: -2, count: paperWidth * paperHeight)
         let texture = Self.makeGrain(width: paperWidth, height: paperHeight)
         grain = texture
         absorption = Self.makeAbsorption(width: width, height: height, grain: texture,
@@ -107,7 +126,7 @@ final class WatercolourRenderer {
                 let distance = hypot(dx, dy)
                 guard distance <= reach else { continue }
                 let areaMask = areaMask(x: x, y: y)
-                if areaMask != 0 && areaMask & (colourAreaMasks[colour.id] ?? 0) == 0 { continue }
+                let belongsToColour = areaMask.intersects(colourAreaMasks[colour.id] ?? AreaMask())
                 let paper = absorption[y * width + x]
                 let wave = sin(Float(x) * 0.29 + sin(Float(y) * 0.11))
                          * sin(Float(y) * 0.23 - Float(x) * 0.13)
@@ -118,6 +137,19 @@ final class WatercolourRenderer {
                 let (tile, local, _) = cell(x: x, y: y, create: true)!
                 let ahead = max(0, Float((dx * direction.dx + dy * direction.dy) / radius))
                 let leadingWater = 0.82 + 0.55 * min(1, ahead)
+                if !belongsToColour {
+                    let addedWater = water * coverage * leadingWater
+                    let pigmentAmount = pigment * coverage * (1.12 - 0.35 * paper)
+                    tile.spillWater[local] = min(1.5, tile.spillWater[local] + addedWater)
+                    let concentration = pigmentAmount / max(addedWater, 0.001)
+                    let acceptedPigment = min(pigmentAmount,
+                                              max(pigmentAmount * 0.08,
+                                                  concentration * tile.spillWater[local] - tile.spill[local].w))
+                    tile.spill[local] += colour.pigment * acceptedPigment
+                    activeSpill.insert(y * width + x)
+                    markDirty(x: x, y: y, dry: false)
+                    continue
+                }
                 let previousWater = tile.water[local]
                 let addedWater = water * coverage * leadingWater
                 if previousWater + addedWater >= Self.wetThreshold {
@@ -139,8 +171,7 @@ final class WatercolourRenderer {
                 let acceptedPigment = min(pigmentAmount,
                                           max(pigmentAmount * 0.08,
                                               concentration * tile.water[local] - wetPigment))
-                let fixedFraction = areaMask != 0
-                    ? settledFraction * (1 - wetness) : 0
+                let fixedFraction = settledFraction * (1 - wetness)
                 tile.mobile[local] += colour.pigment * (acceptedPigment * (1 - fixedFraction))
                 tile.settled[local] += colour.pigment * (acceptedPigment * fixedFraction)
                 active.insert(y * width + x)
@@ -150,8 +181,27 @@ final class WatercolourRenderer {
     }
 
     func step(dt: Float) {
-        guard !active.isEmpty else { return }
+        guard hasActivePaint else { return }
         let now = CACurrentMediaTime()
+        let spillFade = exp(-Self.outsidePigmentFadeRate * dt)
+        for key in activeSpill {
+            let x = key % width
+            let y = key / width
+            guard let (tile, local, _) = cell(x: x, y: y, create: false) else { continue }
+            tile.spill[local] *= spillFade
+            tile.spillWater[local] = max(0, tile.spillWater[local] - dt * Self.evaporationRate)
+            if tile.spill[local].w < Self.visiblePigmentThreshold {
+                tile.spill[local] = .zero
+                tile.spillWater[local] = 0
+            }
+            markDirty(x: x, y: y, dry: false)
+        }
+        activeSpill = activeSpill.filter { key in
+            let x = key % width
+            let y = key / width
+            guard let (tile, local, _) = cell(x: x, y: y, create: false) else { return false }
+            return tile.spill[local].w > 0
+        }
         var waterDelta: [Int: Float] = [:]
         var pigmentDelta: [Int: Pigment] = [:]
         var settledDelta: [Int: Pigment] = [:]
@@ -165,7 +215,7 @@ final class WatercolourRenderer {
             let water = tile.water[local]
             guard water > 0 else { continue }
             let sourceAreaMask = areaMask(x: x, y: y)
-            let paintable = sourceAreaMask != 0
+            let paintable = !sourceAreaMask.isEmpty
             let paper = absorption[key]
             let paperTooth = tooth[key]
             let evaporation = min(water, dt * Self.evaporationRate * (0.72 + 0.38 * paper))
@@ -244,22 +294,7 @@ final class WatercolourRenderer {
             if wasDry && tile.water[local] >= Self.wetThreshold {
                 reworkRecentDry(in: tile, at: local, x: x, y: y, now: now)
             }
-            if areaMask(x: x, y: y) == 0 {
-                // Pigment on the masked surface remains visible briefly, then vanishes.
-                // It never enters the permanent dry layer, even after its water is gone.
-                let fade = exp(-Self.outsidePigmentFadeRate * dt)
-                tile.mobile[local] = (tile.mobile[local] + tile.settled[local]) * fade
-                tile.settled[local] = .zero
-                if tile.mobile[local].w < Self.visiblePigmentThreshold {
-                    tile.mobile[local] = .zero
-                }
-                if tile.water[local] < Self.wetThreshold {
-                    tile.water[local] = 0
-                }
-                if tile.mobile[local].w > 0 || tile.water[local] > 0 {
-                    active.insert(key)
-                }
-            } else if tile.water[local] < Self.wetThreshold {
+            if tile.water[local] < Self.wetThreshold {
                 if tile.recentDry[local].w > 0,
                    now - tile.driedAt[local] > Self.reworkWindow {
                     tile.dry[local] += tile.recentDry[local]
@@ -314,7 +349,9 @@ final class WatercolourRenderer {
         var massField = [Pigment](repeating: .zero, count: paddedWidth * (tile.height + 2))
         var settledField = [Float](repeating: 0, count: massField.count)
         var waterField = [Float](repeating: 0, count: massField.count)
-        var ownerField = [Int](repeating: -1, count: massField.count)
+        var spillField = [Pigment](repeating: .zero, count: massField.count)
+        var spillWaterField = [Float](repeating: 0, count: massField.count)
+        var ownerField = [AreaMask](repeating: AreaMask(), count: massField.count)
         for y in -1...tile.height {
             for x in -1...tile.width {
                 let sheetX = originX + x
@@ -330,6 +367,10 @@ final class WatercolourRenderer {
                 massField[position] = mobile + settled
                 settledField[position] = settled.w
                 waterField[position] = sampleTile.water[local]
+                if wet {
+                    spillField[position] = sampleTile.spill[local]
+                    spillWaterField[position] = sampleTile.spillWater[local]
+                }
             }
         }
 
@@ -350,21 +391,25 @@ final class WatercolourRenderer {
                 guard sheetX < paperWidth, sheetY < paperHeight else { continue }
                 let owner = pixelAreaIndex(x: sheetX, y: sheetY)
                 if !wet && owner == -1 { continue }
-                let ownerBit = owner >= 0 ? 1 << owner : 0
-                let topLeftMatches = owner == -1 ? ownerField[topLeft] == 0
-                    : ownerField[topLeft] >= 0 && ownerField[topLeft] & ownerBit != 0
-                let topRightMatches = owner == -1 ? ownerField[topRight] == 0
-                    : ownerField[topRight] >= 0 && ownerField[topRight] & ownerBit != 0
-                let bottomLeftMatches = owner == -1 ? ownerField[bottomLeft] == 0
-                    : ownerField[bottomLeft] >= 0 && ownerField[bottomLeft] & ownerBit != 0
-                let bottomRightMatches = owner == -1 ? ownerField[bottomRight] == 0
-                    : ownerField[bottomRight] >= 0 && ownerField[bottomRight] & ownerBit != 0
+                var ownerBit = AreaMask()
+                if owner >= 0 { ownerBit.insert(template.paintableAreas[owner].maskIndex) }
+                let topLeftMatches = owner == -1 ? ownerField[topLeft].isEmpty
+                    : ownerField[topLeft].intersects(ownerBit)
+                let topRightMatches = owner == -1 ? ownerField[topRight].isEmpty
+                    : ownerField[topRight].intersects(ownerBit)
+                let bottomLeftMatches = owner == -1 ? ownerField[bottomLeft].isEmpty
+                    : ownerField[bottomLeft].intersects(ownerBit)
+                let bottomRightMatches = owner == -1 ? ownerField[bottomRight].isEmpty
+                    : ownerField[bottomRight].intersects(ownerBit)
                 let topMass = (topLeftMatches ? massField[topLeft] : .zero) * (1 - fx)
                     + (topRightMatches ? massField[topRight] : .zero) * fx
                 let bottomMass = (bottomLeftMatches ? massField[bottomLeft] : .zero) * (1 - fx)
                     + (bottomRightMatches ? massField[bottomRight] : .zero) * fx
                 let mass = topMass * (1 - fy) + bottomMass * fy
-                guard mass.w > 0 else { continue }
+                let topSpill = spillField[topLeft] * (1 - fx) + spillField[topRight] * fx
+                let bottomSpill = spillField[bottomLeft] * (1 - fx) + spillField[bottomRight] * fx
+                let spill = topSpill * (1 - fy) + bottomSpill * fy
+                guard mass.w > 0 || spill.w > 0 else { continue }
                 let topSettled = (topLeftMatches ? settledField[topLeft] : 0) * (1 - fx)
                     + (topRightMatches ? settledField[topRight] : 0) * fx
                 let bottomSettled = (bottomLeftMatches ? settledField[bottomLeft] : 0) * (1 - fx)
@@ -376,18 +421,37 @@ final class WatercolourRenderer {
                     + (bottomRightMatches ? waterField[bottomRight] : 0) * fx
                 let water = topWater * (1 - fy) + bottomWater * fy
                 let paper = Float(grain[sheetY * paperWidth + sheetX]) / 255
-                // Mobile paint reads as a smooth wash; paper tooth appears as it settles.
-                let wash = max(0, mass.w - settled) * (0.9 + 0.12 * paper)
-                let granulated = settled * (0.72 + 0.55 * paper)
-                let opacity = min(0.93, 1 - exp(-2.0 * (wash + granulated)))
-                let sheen = wet ? min(1, water) : 0
-                let red = min(1, mass.x / mass.w + 0.07 * sheen)
-                let green = min(1, mass.y / mass.w + 0.09 * sheen)
-                let blue = min(1, mass.z / mass.w + 0.05 * sheen)
+                var nativeOpacity: Float = 0
+                var nativeRed: Float = 0
+                var nativeGreen: Float = 0
+                var nativeBlue: Float = 0
+                if mass.w > 0 {
+                    // Mobile paint reads as a smooth wash; paper tooth appears as it settles.
+                    let wash = max(0, mass.w - settled) * (0.9 + 0.12 * paper)
+                    let granulated = settled * (0.72 + 0.55 * paper)
+                    nativeOpacity = min(0.93, 1 - exp(-2.0 * (wash + granulated)))
+                    let sheen = wet ? min(1, water) : 0
+                    nativeRed = min(1, mass.x / mass.w + 0.07 * sheen)
+                    nativeGreen = min(1, mass.y / mass.w + 0.09 * sheen)
+                    nativeBlue = min(1, mass.z / mass.w + 0.05 * sheen)
+                }
+                let spillOpacity = min(0.93, 1 - exp(-2.0 * spill.w * (0.9 + 0.12 * paper)))
+                let spillSheen = min(1, (spillWaterField[topLeft] * (1 - fx)
+                    + spillWaterField[topRight] * fx) * (1 - fy)
+                    + (spillWaterField[bottomLeft] * (1 - fx)
+                    + spillWaterField[bottomRight] * fx) * fy)
+                let remaining = 1 - spillOpacity
+                let opacity = spillOpacity + nativeOpacity * remaining
+                let red = (spill.w > 0 ? min(1, spill.x / spill.w + 0.07 * spillSheen) * spillOpacity : 0)
+                    + nativeRed * nativeOpacity * remaining
+                let green = (spill.w > 0 ? min(1, spill.y / spill.w + 0.09 * spillSheen) * spillOpacity : 0)
+                    + nativeGreen * nativeOpacity * remaining
+                let blue = (spill.w > 0 ? min(1, spill.z / spill.w + 0.05 * spillSheen) * spillOpacity : 0)
+                    + nativeBlue * nativeOpacity * remaining
                 let base = (y * imageWidth + x) * 4
-                pixels[base] = UInt8(clamping: Int(255 * red * opacity))
-                pixels[base + 1] = UInt8(clamping: Int(255 * green * opacity))
-                pixels[base + 2] = UInt8(clamping: Int(255 * blue * opacity))
+                pixels[base] = UInt8(clamping: Int(255 * red))
+                pixels[base + 1] = UInt8(clamping: Int(255 * green))
+                pixels[base + 2] = UInt8(clamping: Int(255 * blue))
                 pixels[base + 3] = UInt8(clamping: Int(255 * opacity))
             }
         }
@@ -421,19 +485,17 @@ final class WatercolourRenderer {
         }
     }
 
-    private func areaMask(x: Int, y: Int) -> Int {
+    private func areaMask(x: Int, y: Int) -> AreaMask {
         let index = y * width + x
-        if cellAreaMasks[index] != -1 {
-            return cellAreaMasks[index]
-        }
-        var mask = 0
+        if let cached = cellAreaMasks[index] { return cached }
+        var mask = AreaMask()
         for pixelY in 0..<Self.pixelsPerCell {
             for pixelX in 0..<Self.pixelsPerCell {
                 let sheetX = x * Self.pixelsPerCell + pixelX
                 let sheetY = y * Self.pixelsPerCell + pixelY
                 guard sheetX < paperWidth, sheetY < paperHeight else { continue }
                 let owner = pixelAreaIndex(x: sheetX, y: sheetY)
-                if owner >= 0 { mask |= 1 << owner }
+                if owner >= 0 { mask.insert(template.paintableAreas[owner].maskIndex) }
             }
         }
         cellAreaMasks[index] = mask
@@ -441,12 +503,7 @@ final class WatercolourRenderer {
     }
 
     private func pixelAreaIndex(x: Int, y: Int) -> Int {
-        let index = y * paperWidth + x
-        if pixelAreaIndices[index] != -2 { return Int(pixelAreaIndices[index]) }
-        let point = CGPoint(x: CGFloat(x) + 0.5, y: CGFloat(y) + 0.5)
-        let owner = template.areaIndex(at: point) ?? -1
-        pixelAreaIndices[index] = Int16(owner)
-        return owner
+        Int(template.owners[y * paperWidth + x]) - 1
     }
 
     private func cell(x: Int, y: Int, create: Bool) -> (Tile, Int, Int)? {
