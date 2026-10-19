@@ -63,8 +63,10 @@ struct PaintingTemplate {
         let palette = asset.paletteOrder.map { id -> PaintColour in
             let hex = asset.palette[id]!
             let value = UInt32(hex.dropFirst(), radix: 16)!
+            let name = id == "sky_peach" ? "Dusk Violet" :
+                id.replacingOccurrences(of: "_", with: " ").capitalized
             return PaintColour(id: id,
-                               name: id.replacingOccurrences(of: "_", with: " ").capitalized,
+                               name: name,
                                red: Float((value >> 16) & 0xff) / 255,
                                green: Float((value >> 8) & 0xff) / 255,
                                blue: Float(value & 0xff) / 255)
