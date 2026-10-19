@@ -14,6 +14,10 @@
 		A00000000000000000000020 /* PaintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001F /* PaintView.swift */; };
 		A00000000000000000000022 /* WatercolourRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000021 /* WatercolourRenderer.swift */; };
 		A00000000000000000000024 /* PaintingTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000023 /* PaintingTemplate.swift */; };
+		A00000000000000000000026 /* puppy-god-regions.json in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000025 /* puppy-god-regions.json */; };
+		A00000000000000000000028 /* puppy-god-ink.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000027 /* puppy-god-ink.png */; };
+		A0000000000000000000002A /* puppy-god-owners.bin in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000029 /* puppy-god-owners.bin */; };
+		A0000000000000000000002C /* ColourFocusGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000002B /* ColourFocusGuide.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +29,10 @@
 		A0000000000000000000001F /* PaintView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaintView.swift; sourceTree = "<group>"; };
 		A00000000000000000000021 /* WatercolourRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatercolourRenderer.swift; sourceTree = "<group>"; };
 		A00000000000000000000023 /* PaintingTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaintingTemplate.swift; sourceTree = "<group>"; };
+		A00000000000000000000025 /* puppy-god-regions.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ../../Artwork/puppy-god-regions.json; sourceTree = "<group>"; };
+		A00000000000000000000027 /* puppy-god-ink.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = ../../Artwork/puppy-god-ink.png; sourceTree = "<group>"; };
+		A00000000000000000000029 /* puppy-god-owners.bin */ = {isa = PBXFileReference; lastKnownFileType = file; path = ../../Artwork/puppy-god-owners.bin; sourceTree = "<group>"; };
+		A0000000000000000000002B /* ColourFocusGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColourFocusGuide.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -45,6 +53,7 @@
 				A0000000000000000000001F /* PaintView.swift */,
 				A00000000000000000000021 /* WatercolourRenderer.swift */,
 				A00000000000000000000023 /* PaintingTemplate.swift */,
+				A0000000000000000000002B /* ColourFocusGuide.swift */,
 				A00000000000000000000018 /* Resources */,
 			);
 			path = Colourbug;
@@ -54,6 +63,9 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000015 /* WatercolourWhisper.png */,
+				A00000000000000000000025 /* puppy-god-regions.json */,
+				A00000000000000000000027 /* puppy-god-ink.png */,
+				A00000000000000000000029 /* puppy-god-owners.bin */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -128,6 +140,7 @@
 				A00000000000000000000020 /* PaintView.swift in Sources */,
 				A00000000000000000000022 /* WatercolourRenderer.swift in Sources */,
 				A00000000000000000000024 /* PaintingTemplate.swift in Sources */,
+				A0000000000000000000002C /* ColourFocusGuide.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -139,6 +152,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000016 /* WatercolourWhisper.png in Resources */,
+				A00000000000000000000026 /* puppy-god-regions.json in Resources */,
+				A00000000000000000000028 /* puppy-god-ink.png in Resources */,
+				A0000000000000000000002A /* puppy-god-owners.bin in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

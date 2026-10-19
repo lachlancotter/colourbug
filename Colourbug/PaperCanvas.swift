@@ -2,9 +2,7 @@ import SwiftUI
 import UIKit
 import Observation
 
-enum PaintColourID: String, Hashable {
-    case blue, coral, orange, gold, green, violet
-}
+typealias PaintColourID = String
 
 struct PaintColour: Identifiable, Equatable {
     let id: PaintColourID
@@ -16,49 +14,51 @@ struct PaintColour: Identifiable, Equatable {
     var displayColour: Color { Color(red: Double(red), green: Double(green), blue: Double(blue)) }
     var pigment: SIMD4<Float> { SIMD4(red, green, blue, 1) }
 
-    static let palette: [PaintColour] = [
-        PaintColour(id: .blue, name: "Blue", red: 0.13, green: 0.37, blue: 0.86),
-        PaintColour(id: .coral, name: "Coral", red: 0.85, green: 0.28, blue: 0.28),
-        PaintColour(id: .orange, name: "Orange", red: 0.92, green: 0.47, blue: 0.16),
-        PaintColour(id: .gold, name: "Gold", red: 0.80, green: 0.62, blue: 0.12),
-        PaintColour(id: .green, name: "Green", red: 0.20, green: 0.55, blue: 0.34),
-        PaintColour(id: .violet, name: "Violet", red: 0.52, green: 0.34, blue: 0.70)
-    ]
 }
 
 @Observable
 final class PaintingSession {
-    var selectedColour = PaintColour.palette[0]
+    var selectedColour = PaintingTemplate.puppyGod.palette[0]
 }
 
 struct PaintingScreen: View {
     @State private var session = PaintingSession()
+    private let template = PaintingTemplate.puppyGod
 
     var body: some View {
         VStack(spacing: 0) {
             PaperCanvas(session: session)
-            HStack(spacing: 18) {
-                ForEach(PaintColour.palette) { colour in
-                    Button {
-                        session.selectedColour = colour
-                    } label: {
-                        Circle()
-                            .fill(colour.displayColour)
-                            .frame(width: 46, height: 46)
-                            .padding(5)
-                            .overlay {
+            VStack(spacing: 6) {
+                Text(session.selectedColour.name)
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color(red: 0.29, green: 0.26, blue: 0.23))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(template.palette) { colour in
+                            Button {
+                                session.selectedColour = colour
+                            } label: {
                                 Circle()
-                                    .strokeBorder(session.selectedColour == colour ? Color(red: 0.29, green: 0.26, blue: 0.23) : .clear,
-                                                  lineWidth: 2)
+                                    .fill(colour.displayColour)
+                                    .frame(width: 42, height: 42)
+                                    .padding(5)
+                                    .overlay {
+                                        Circle()
+                                            .strokeBorder(session.selectedColour == colour
+                                                ? Color(red: 0.29, green: 0.26, blue: 0.23) : .clear,
+                                                lineWidth: 2)
+                                    }
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(colour.name) paint")
+                            .accessibilityValue(session.selectedColour == colour ? "Selected" : "")
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(colour.name) paint")
-                    .accessibilityValue(session.selectedColour == colour ? "Selected" : "")
+                    .padding(.horizontal, 20)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 10)
             .background(Color(red: 0.96, green: 0.94, blue: 0.90))
         }
         .ignoresSafeArea(edges: .top)
@@ -76,11 +76,12 @@ struct PaperCanvas: UIViewRepresentable {
 }
 
 final class PaperCanvasView: UIView, UIGestureRecognizerDelegate {
-    private let template = PaintingTemplate.sampleFlower
+    private let template = PaintingTemplate.puppyGod
     private let session: PaintingSession
     private var paperSize: CGSize { template.size }
     private let sheet = UIView()
     private lazy var paint = PaintView(size: paperSize, template: template, session: session)
+    private lazy var focusGuide = ColourFocusGuide(template: template, session: session)
     private var scale: CGFloat = 1
     private var minimumScale: CGFloat = 0.3
     private var offset: CGPoint = .zero
@@ -110,13 +111,15 @@ final class PaperCanvasView: UIView, UIGestureRecognizerDelegate {
         sheet.isUserInteractionEnabled = false
         sheet.addSubview(paper.view)
         sheet.addSubview(paint)
-        for area in template.paintableAreas {
-            let outline = CAShapeLayer()
-            outline.path = area.path
-            outline.fillColor = UIColor.clear.cgColor
-            outline.strokeColor = UIColor(red: 0.38, green: 0.33, blue: 0.29, alpha: 0.65).cgColor
-            outline.lineWidth = 2
-            sheet.layer.addSublayer(outline)
+        sheet.addSubview(focusGuide.veilView)
+        let ink = UIImageView(image: UIImage(named: template.inkImageName))
+        ink.frame = sheet.bounds
+        ink.contentMode = .scaleToFill
+        ink.isUserInteractionEnabled = false
+        sheet.addSubview(ink)
+        sheet.addSubview(focusGuide.outlinesView)
+        paint.onPaintingChanged = { [weak self] painting in
+            self?.focusGuide.setPainting(painting)
         }
         addSubview(sheet)
     }
