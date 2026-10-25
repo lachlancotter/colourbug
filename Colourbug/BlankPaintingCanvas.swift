@@ -12,7 +12,7 @@ final class BlankPaintingView: UIView {
     private var paper: UIImageView?
     private var paint: PaintView?
     private var canvasSize = CGSize.zero
-    private var behaviour: PaintBehaviour = .paperBloom
+    private var behaviour: PaintBehaviour = .fluid
 
     init() {
         super.init(frame: .zero)
