@@ -12,6 +12,7 @@ final class BlankPaintingView: UIView {
     private var paper: UIImageView?
     private var paint: PaintView?
     private var canvasSize = CGSize.zero
+    private var behaviour: PaintBehaviour = .paperBloom
 
     init() {
         super.init(frame: .zero)
@@ -19,6 +20,12 @@ final class BlankPaintingView: UIView {
         isMultipleTouchEnabled = true
         session.selectedColour = PaintColour(id: "ink", name: "Indigo",
                                               red: 0.25, green: 0.38, blue: 0.69)
+        let comparison = UITapGestureRecognizer(target: self,
+                                                 action: #selector(swapPaintBehaviour))
+        comparison.numberOfTouchesRequired = 2
+        comparison.numberOfTapsRequired = 2
+        comparison.cancelsTouchesInView = false
+        addGestureRecognizer(comparison)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -29,6 +36,7 @@ final class BlankPaintingView: UIView {
         guard size.width > 0, size.height > 0, size != canvasSize else { return }
         canvasSize = size
         paper?.removeFromSuperview()
+        paint?.stopAnimating()
         paint?.removeFromSuperview()
 
         let texture = ImagePaperStrategy(size: size).view
@@ -38,9 +46,15 @@ final class BlankPaintingView: UIView {
 
         let template = PaintingTemplate.blankPaper(size: size)
         let surface = PaintView(size: size, template: template,
-                                session: session, livingFlow: true)
+                                session: session, behaviour: behaviour)
         addSubview(surface)
         paint = surface
+    }
+
+    @objc private func swapPaintBehaviour() {
+        behaviour = behaviour == .paperBloom ? .fluid : .paperBloom
+        canvasSize = .zero
+        setNeedsLayout()
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {

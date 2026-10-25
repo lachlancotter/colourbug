@@ -1,5 +1,11 @@
 import UIKit
 
+enum PaintBehaviour {
+    case classic
+    case fluid
+    case paperBloom
+}
+
 // Water moves on a coarse grid; the image is reconstructed at one paper point per pixel.
 final class WatercolourRenderer {
     // RGB is stored as colour weighted by pigment mass; w is the mass.
@@ -46,6 +52,9 @@ final class WatercolourRenderer {
                                             (-1, 0),            (1, 0),
                                             (-1, 1),  (0, 1),   (1, 1)]
     private static let flowNeighbours = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    private static let bloomNeighbours = [(-1, -1), (0, -1), (1, -1),
+                                          (-1, 0),           (1, 0),
+                                          (-1, 1),  (0, 1),  (1, 1)]
 
     private final class Tile {
         let width: Int
@@ -63,6 +72,9 @@ final class WatercolourRenderer {
         // Off-group brush pigment is displayed above the paint, then fades away.
         var spill: [Pigment]
         var spillWater: [Float]
+        var bloomDepth: [Float]
+        var bloomStrength: [Float]
+        var lastRewetStroke: [Int]
 
         init(width: Int, height: Int) {
             self.width = width
@@ -77,6 +89,9 @@ final class WatercolourRenderer {
             driedAt = Array(repeating: 0, count: count)
             spill = Array(repeating: .zero, count: count)
             spillWater = Array(repeating: 0, count: count)
+            bloomDepth = Array(repeating: .infinity, count: count)
+            bloomStrength = Array(repeating: 0, count: count)
+            lastRewetStroke = Array(repeating: -1, count: count)
         }
     }
 
@@ -87,37 +102,58 @@ final class WatercolourRenderer {
     private var tiles: [Int: Tile] = [:]
     private var active = Set<Int>()
     private var activeSpill = Set<Int>()
+    private var bloomFront = Set<Int>()
+    private var strokeID = 0
     private var eddies: [Eddy] = []
     private var dirtyTiles = Set<Int>()
     private var dirtyDryTiles = Set<Int>()
     private let absorption: [Float]
     private let tooth: [Float]
+    // Broad fibres and fine paper grain make one wet edge advance unevenly.
+    private let wicking: [Float]
     private let grain: [UInt8]
     private let paperWidth: Int
     private let paperHeight: Int
     private let template: PaintingTemplate
-    private let livingFlow: Bool
-    private var wetThreshold: Float { livingFlow ? 0.008 : Self.wetThreshold }
-    private var evaporationRate: Float { livingFlow ? 0.18 : Self.evaporationRate }
-    private var flowDrag: Float { livingFlow ? 0.55 : Self.flowDrag }
+    private let behaviour: PaintBehaviour
+    private var livingFlow: Bool { behaviour == .fluid }
+    private var paperBloom: Bool { behaviour == .paperBloom }
+    private var wetThreshold: Float {
+        livingFlow ? 0.008 : paperBloom ? 0.008 : Self.wetThreshold
+    }
+    private var evaporationRate: Float {
+        livingFlow ? 0.18 : paperBloom ? 0.26 : Self.evaporationRate
+    }
+    private var flowDrag: Float {
+        livingFlow ? 0.55 : paperBloom ? 1.3 : Self.flowDrag
+    }
     private var eddyRadius: Float { livingFlow ? 21 : Self.eddyRadius }
-    private var eddyLifetime: CFTimeInterval { livingFlow ? 4.5 : Self.eddyLifetime }
+    private var eddyLifetime: CFTimeInterval {
+        livingFlow ? 4.5 : Self.eddyLifetime
+    }
     private var eddyStrength: Float { livingFlow ? 58 : Self.eddyStrength }
+    private var waterDepositMultiplier: Float {
+        paperBloom ? 0.98 : Self.waterDepositMultiplier
+    }
     // A cell can straddle several regions. Shared paint groups have one bit,
     // which lets unlined sky and fur colours blend without an artificial seam.
     private var cellAreaMasks: [AreaMask?]
     private let colourAreaMasks: [PaintColourID: AreaMask]
 
-    var hasActivePaint: Bool { !active.isEmpty || !activeSpill.isEmpty }
+    var hasActivePaint: Bool {
+        !active.isEmpty || !activeSpill.isEmpty || !bloomFront.isEmpty
+    }
+
+    func beginStroke() { strokeID += 1 }
 
     init(size: CGSize, host: UIView, template: PaintingTemplate,
-         livingFlow: Bool = false) {
+         behaviour: PaintBehaviour = .classic) {
         width = Int(ceil(size.width / Self.cellSize))
         height = Int(ceil(size.height / Self.cellSize))
         tilesAcross = Int(ceil(Double(width) / Double(Self.tileSide)))
         self.host = host
         self.template = template
-        self.livingFlow = livingFlow
+        self.behaviour = behaviour
         cellAreaMasks = Array(repeating: nil, count: width * height)
         var colourMasks: [PaintColourID: AreaMask] = [:]
         for area in template.paintableAreas {
@@ -132,6 +168,17 @@ final class WatercolourRenderer {
                                          paperWidth: paperWidth)
         tooth = Self.makeTooth(width: width, height: height, grain: texture,
                                paperWidth: paperWidth)
+        let gridWidth = width
+        let paperAbsorption = absorption
+        wicking = (0..<(width * height)).map { index in
+            let x = Float(index % gridWidth)
+            let y = Float(index / gridWidth)
+            let broad = sin(x * 0.19 + 0.9 * sin(y * 0.11))
+                * sin(y * 0.17 - 0.7 * sin(x * 0.09))
+            let fine = sin(x * 0.67 + y * 0.31) * sin(y * 0.53 - x * 0.27)
+            return max(0.32, min(1.75,
+                1 + 0.43 * broad + 0.18 * fine + 0.22 * (paperAbsorption[index] - 0.5)))
+        }
     }
 
     func deposit(at point: CGPoint, pigment: Float, water: Float, radius: CGFloat,
@@ -139,7 +186,8 @@ final class WatercolourRenderer {
                  colour: PaintColour) {
         let now = CACurrentMediaTime()
         seedEddy(at: point, direction: direction, colour: colour, now: now)
-        let reach = radius + CGFloat(Self.edgeFeather) / 2 + 2
+        let feather: Float = paperBloom ? 21 : Self.edgeFeather
+        let reach = radius + CGFloat(feather) / 2 + 2
         let minX = max(0, Int(floor((point.x - reach) / Self.cellSize)))
         let maxX = min(width - 1, Int(floor((point.x + reach) / Self.cellSize)))
         let minY = max(0, Int(floor((point.y - reach) / Self.cellSize)))
@@ -157,7 +205,7 @@ final class WatercolourRenderer {
                 let wave = sin(Float(x) * 0.29 + sin(Float(y) * 0.11))
                          * sin(Float(y) * 0.23 - Float(x) * 0.13)
                 let edge = Float(radius) + 0.9 * wave + 0.7 * (paper - 0.5)
-                let t = max(0, min(1, (edge - Float(distance)) / Self.edgeFeather + 0.5))
+                let t = max(0, min(1, (edge - Float(distance)) / feather + 0.5))
                 let coverage = t * t * (3 - 2 * t)
                 guard coverage > 0 else { continue }
                 // Water reaches the soft fringe first; pigment follows as it spreads.
@@ -166,7 +214,7 @@ final class WatercolourRenderer {
                 let ahead = max(0, Float((dx * direction.dx + dy * direction.dy) / radius))
                 let leadingWater = 0.82 + 0.55 * min(1, ahead)
                 if !belongsToColour {
-                    let addedWater = water * Self.waterDepositMultiplier * coverage * leadingWater
+                    let addedWater = water * waterDepositMultiplier * coverage * leadingWater
                     let pigmentAmount = pigment * pigmentCoverage * (1.12 - 0.35 * paper)
                     tile.spillWater[local] = min(1.5, tile.spillWater[local] + addedWater)
                     let concentration = pigmentAmount / max(addedWater, 0.001)
@@ -179,11 +227,27 @@ final class WatercolourRenderer {
                     continue
                 }
                 let previousWater = tile.water[local]
-                let addedWater = water * Self.waterDepositMultiplier * coverage * leadingWater
-                if previousWater + addedWater >= wetThreshold {
+                let addedWater = water * waterDepositMultiplier * coverage * leadingWater
+                let firstRewet = paperBloom && coverage > 0.65
+                    && tile.lastRewetStroke[local] != strokeID
+                if previousWater + addedWater >= wetThreshold,
+                   !paperBloom || firstRewet {
                     reworkRecentDry(in: tile, at: local, x: x, y: y, now: now)
                 }
-                if previousWater >= wetThreshold {
+                if paperBloom {
+                    if firstRewet {
+                        // A cell releases a limited share of its old colour once
+                        // per stroke; closely spaced brush samples cannot strip it.
+                        tile.lastRewetStroke[local] = strokeID
+                        let lifted = tile.settled[local] * 0.22
+                        tile.settled[local] -= lifted
+                        tile.mobile[local] += lifted
+                        let liftedDry = tile.dry[local] * 0.12
+                        tile.dry[local] -= liftedDry
+                        tile.mobile[local] += liftedDry
+                        if liftedDry.w > 0 { markDirty(x: x, y: y, dry: true) }
+                    }
+                } else if previousWater >= wetThreshold {
                     // A pass through the same wash loosens pigment that has not dried yet.
                     let lifted = tile.settled[local] * min(0.85, water * coverage * 3)
                     tile.settled[local] -= lifted
@@ -193,11 +257,11 @@ final class WatercolourRenderer {
                 let brushDirection = SIMD2(Float(direction.dx), Float(direction.dy))
                 if brushDirection != .zero {
                     tile.momentum[local] += addedWater * brushDirection
-                        * (livingFlow ? 8 : Self.brushFlowSpeed)
+                        * (livingFlow ? 8 : paperBloom ? 3.3 : Self.brushFlowSpeed)
                     let momentum = tile.momentum[local]
                     let speed = sqrt(momentum.x * momentum.x + momentum.y * momentum.y)
                     let limit = tile.water[local]
-                        * (livingFlow ? 9 : Self.maximumFlowSpeed)
+                        * (livingFlow ? 9 : paperBloom ? 4 : Self.maximumFlowSpeed)
                     if speed > limit { tile.momentum[local] *= limit / speed }
                 }
                 let wetness = min(1, previousWater / 0.5)
@@ -206,12 +270,20 @@ final class WatercolourRenderer {
                 // of building a fresh opaque ridge on every overlapping stamp.
                 let concentration = pigmentAmount / max(addedWater, 0.001)
                 let wetPigment = tile.mobile[local].w + tile.settled[local].w
+                    + (paperBloom ? tile.dry[local].w * 0.75 : 0)
                 let acceptedPigment = min(pigmentAmount,
-                                          max(pigmentAmount * 0.08,
+                                          max(pigmentAmount * (paperBloom ? 0.02 : 0.08),
                                               concentration * tile.water[local] - wetPigment))
-                let fixedFraction = settledFraction * (1 - wetness)
+                let fixedFraction = paperBloom
+                    ? max(0.08, max(0.28, settledFraction) * (1 - wetness))
+                    : settledFraction * (1 - wetness)
                 tile.mobile[local] += colour.pigment * (acceptedPigment * (1 - fixedFraction))
                 tile.settled[local] += colour.pigment * (acceptedPigment * fixedFraction)
+                if paperBloom && coverage > 0.58 {
+                    tile.bloomDepth[local] = 0
+                    tile.bloomStrength[local] = max(tile.bloomStrength[local], coverage)
+                    bloomFront.insert(y * width + x)
+                }
                 active.insert(y * width + x)
                 markDirty(x: x, y: y, dry: false)
             }
@@ -324,8 +396,10 @@ final class WatercolourRenderer {
             let settling = paintable
                 ? min(1, dt * (0.10 + 0.15 * paper + 0.27 * paperTooth
                                  + 0.18 * (1 - min(water, 1))
-                                 + (livingFlow ? 0.11 : Self.edgeSettlingRate) * boundary)) : 0
-            let amount = tile.mobile[local] * settling
+                                 + (livingFlow ? 0.11 : paperBloom ? 0.62
+                                    : Self.edgeSettlingRate) * boundary)) : 0
+            let adjustedSettling = paperBloom ? min(1, settling * 1.25) : settling
+            let amount = tile.mobile[local] * adjustedSettling
             pigmentDelta[key, default: .zero] -= amount
             settledDelta[key, default: .zero] += amount
             markDirty(x: x, y: y, dry: false)
@@ -346,6 +420,7 @@ final class WatercolourRenderer {
                 let gradient = max(0, water - otherWater)
                 let rate: Float = livingFlow
                     ? (otherIsWet ? 2.6 + 0.5 * (1 - paper) : 2.3)
+                    : paperBloom ? (otherIsWet ? 3.4 : 8.0) * wicking[ny * width + nx]
                     : (otherIsWet ? 1.7 + 0.5 * (1 - paper) : 1.3)
                 let drift = max(0, velocity.x * Float(offsetX)
                                     + velocity.y * Float(offsetY))
@@ -354,10 +429,12 @@ final class WatercolourRenderer {
                 // A small transfer to dry paper evaporates immediately; avoid a dry halo.
                 if !otherIsWet && flow < wetThreshold { continue }
                 let otherConcentration = otherPigment / max(otherWater, 0.1)
-                let mixing = otherIsWet ? dt * (livingFlow ? 1.6 : Self.pigmentMixingRate)
+                let mixing = otherIsWet ? dt * (livingFlow ? 1.6
+                    : paperBloom ? 2.1 : Self.pigmentMixingRate)
                     * min(water, otherWater)
                     * max(0, concentration - otherConcentration) : 0
-                let carried = min(remainingPigment, tile.mobile[local].w * 0.48,
+                let carried = min(remainingPigment,
+                                  tile.mobile[local].w * (paperBloom ? 0.62 : 0.48),
                                   concentration * flow * 0.95 + mixing
                                   + dt * 0.2 * tile.mobile[local].w
                                   * max(0, tooth[ny * width + nx] - paperTooth)
@@ -413,6 +490,77 @@ final class WatercolourRenderer {
             }
             markDirty(x: x, y: y, dry: false)
         }
+        if paperBloom { advanceBloomFront() }
+    }
+
+    // A single front grows from the joined painted area. Its old positions
+    // retain pigment, making tide lines rather than stamped circles.
+    private func advanceBloomFront() {
+        guard !bloomFront.isEmpty else { return }
+        var nextFront = Set<Int>()
+        for key in bloomFront {
+            let x = key % width
+            let y = key / width
+            guard let (source, position, _) = cell(x: x, y: y, create: false) else { continue }
+            let depth = source.bloomDepth[position]
+            let strength = source.bloomStrength[position]
+            guard depth < 32, strength > 0.12 else { continue }
+            let sourcePigment = source.mobile[position] + source.settled[position]
+                + source.recentDry[position] + source.dry[position]
+            guard sourcePigment.w > 0.001 else { continue }
+            let sourceMask = areaMask(x: x, y: y)
+            for (offsetX, offsetY) in Self.bloomNeighbours {
+                let nx = x + offsetX
+                let ny = y + offsetY
+                guard nx >= 0, nx < width, ny >= 0, ny < height,
+                      areaMask(x: nx, y: ny) == sourceMask else { continue }
+                let diagonal = offsetX != 0 && offsetY != 0
+                let nextDepth = depth + (diagonal ? 1.41 : 1)
+                guard nextDepth <= 33 else { continue }
+                let targetKey = ny * width + nx
+                let (target, targetPosition, _) = cell(x: nx, y: ny, create: true)!
+                guard target.bloomDepth[targetPosition] > nextDepth else { continue }
+                let fibre = wicking[targetKey]
+                let nextStrength = strength * (0.955 + 0.06 * (fibre - 1))
+                    * (diagonal ? 0.972 : 1)
+                guard nextStrength > 0.12 else { continue }
+                target.bloomDepth[targetPosition] = nextDepth
+                target.bloomStrength[targetPosition] = nextStrength
+
+                // A broad wash bridges the dense brush mark and the pale fringe.
+                // Tide lines build gradually farther out, rather than making
+                // a hard contour immediately beside the brush.
+                let phase = nextDepth * 1.08 + 0.85 * fibre
+                let tide = pow(max(0, sin(phase)), 3)
+                let wash = 0.027 + 0.23 * exp(-nextDepth / 13)
+                let tideStrength = min(1, nextDepth / 7)
+                let existingMass = target.mobile[targetPosition].w
+                    + target.settled[targetPosition].w
+                    + target.recentDry[targetPosition].w
+                    + target.dry[targetPosition].w
+                // An overlapping front travels through existing colour without
+                // erasing it or printing a second set of tide lines on top.
+                let refill = max(0, min(1, (0.12 - existingMass) / 0.12))
+                let mass = nextStrength * (wash + 0.045 * tide * tideStrength) * refill
+                let separation = (nextDepth - depth) / 33
+                let colour = Pigment(min(1, sourcePigment.x / sourcePigment.w
+                                            + 0.16 * separation),
+                                     max(0, sourcePigment.y / sourcePigment.w
+                                            - 0.07 * separation),
+                                     min(1, sourcePigment.z / sourcePigment.w
+                                            + 0.06 * separation), 1)
+                if mass > 0.001 {
+                    target.settled[targetPosition] += colour * mass * 0.78
+                    target.mobile[targetPosition] += colour * mass * 0.22
+                    target.water[targetPosition] = max(target.water[targetPosition],
+                                                        0.025 * nextStrength)
+                    active.insert(targetKey)
+                    markDirty(x: nx, y: ny, dry: false)
+                }
+                nextFront.insert(targetKey)
+            }
+        }
+        bloomFront = nextFront
     }
 
     private func reworkRecentDry(in tile: Tile, at local: Int, x: Int, y: Int,
@@ -420,12 +568,14 @@ final class WatercolourRenderer {
         let pigment = tile.recentDry[local]
         guard pigment.w > 0 else { return }
         if now - tile.driedAt[local] <= Self.reworkWindow {
-            tile.mobile[local] += pigment
+            let lifted = paperBloom ? pigment * 0.24 : pigment
+            tile.mobile[local] += lifted
+            tile.recentDry[local] -= lifted
             markDirty(x: x, y: y, dry: true)
         } else {
             tile.dry[local] += pigment
+            tile.recentDry[local] = .zero
         }
-        tile.recentDry[local] = .zero
     }
 
     func renderDirtyTiles() {
@@ -462,7 +612,8 @@ final class WatercolourRenderer {
                 let position = (y + 1) * paddedWidth + x + 1
                 ownerField[position] = areaMask(x: sheetX, y: sheetY)
                 guard let (sampleTile, local, _) = cell(x: sheetX, y: sheetY, create: false) else { continue }
-                let dilution = 1 - 0.32 * min(1, sampleTile.water[local])
+                let dilution = 1 - (paperBloom ? 0.12 : 0.32)
+                    * min(1, sampleTile.water[local])
                 let settled = wet ? sampleTile.settled[local]
                     : sampleTile.dry[local] + sampleTile.recentDry[local]
                 let mobile: Pigment = wet ? sampleTile.mobile[local] * dilution : .zero

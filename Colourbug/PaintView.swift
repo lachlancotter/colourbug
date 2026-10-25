@@ -58,23 +58,24 @@ final class PaintView: UIView {
     private var strokeColour: PaintColour
     private let template: PaintingTemplate
     private let session: PaintingSession
-    private let livingFlow: Bool
+    private let behaviour: PaintBehaviour
+    private var livingFlow: Bool { behaviour == .fluid }
     var onPaintingChanged: ((Bool) -> Void)?
     var canPaintAt: ((CGPoint) -> Bool)?
     var onPaintSample: ((CGPoint) -> Void)?
     var onStrokeFinished: (() -> Void)?
     private lazy var paint = WatercolourRenderer(size: bounds.size, host: self,
-                                                 template: template, livingFlow: livingFlow)
+                                                 template: template, behaviour: behaviour)
     private let contactSheen = CAGradientLayer()
     private var displayLink: CADisplayLink?
     private var lastTick: CFTimeInterval?
 
     init(size: CGSize, template: PaintingTemplate, session: PaintingSession,
-         livingFlow: Bool = false) {
+         behaviour: PaintBehaviour = .classic) {
         self.template = template
         self.session = session
         self.strokeColour = session.selectedColour
-        self.livingFlow = livingFlow
+        self.behaviour = behaviour
         super.init(frame: CGRect(origin: .zero, size: size))
         backgroundColor = .clear
         isUserInteractionEnabled = false
@@ -94,6 +95,12 @@ final class PaintView: UIView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func stopAnimating() {
+        displayLink?.invalidate()
+        displayLink = nil
+        lastTick = nil
+    }
 
     func handleTouchesBegan(_ touches: Set<UITouch>) {
         activeTouches.formUnion(touches)
@@ -117,6 +124,7 @@ final class PaintView: UIView {
         let point = touch.location(in: self)
         guard bounds.contains(point), canPaintAt?(point) ?? true else { return }
         paintingTouch = touch
+        paint.beginStroke()
         onPaintingChanged?(true)
         strokeColour = session.selectedColour
         lastPoint = point
@@ -377,4 +385,5 @@ final class PaintView: UIView {
         }
         flowTails.removeAll { $0.age >= 1.15 }
     }
+
 }

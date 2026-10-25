@@ -20,7 +20,7 @@ Our goal is to create **a little happy place** — somewhere to slow down, unwin
 
 ## Current state
 
-The app currently opens to **only a full-screen textured sheet**. Paint on it with a finger or Apple Pencil using a single indigo pigment. The sheet is one continuous paint area: water and pigment can spread freely, remain mobile longer, form small eddies, and curl beyond the end of a stroke. This isolated study is for judging the feel of the paint before adding scene objects, colour selection, or progression back into the experience. Painting is reset when the canvas size changes or the app relaunches.
+The app currently opens to **only a full-screen textured sheet**. Paint on it with a finger or Apple Pencil using a single indigo pigment. It starts with the **paper bloom** candidate: a connected capillary front grows from the whole stroke, travels unevenly through the paper, and leaves pale violet washes and darker tide lines as it settles. Painting over an existing wash rewets a limited amount of pigment once per stroke; an overlapping bloom travels through denser colour without laying another tide line on top. Double-tap with two fingers to clear the sheet and switch to the saved **fluid** candidate, whose pigment stays mobile longer, forms stronger eddies, and curls beyond the end of a stroke. Double-tap with two fingers again to return to paper bloom. This isolated study is for comparing the feel of the paint before adding scene objects, colour selection, or progression back into the experience. Painting is reset when the canvas size changes or the app relaunches.
 
 The earlier puppy god canvas and its region-based painting implementation remain in the source for comparison, but are not shown in the current app.
 
