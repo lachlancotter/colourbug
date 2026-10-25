@@ -92,6 +92,18 @@ struct PaintingTemplate {
                                 inkImageName: "puppy-god-ink")
     }()
 
+    // One continuous area allows pigment and water to travel anywhere on the sheet.
+    static func blankPaper(size: CGSize) -> PaintingTemplate {
+        let colour = PaintColour(id: "ink", name: "Indigo",
+                                 red: 0.25, green: 0.38, blue: 0.69)
+        let path = CGPath(rect: CGRect(origin: .zero, size: size), transform: nil)
+        let area = Area(id: "paper", colourID: colour.id, boundary: "none",
+                        featherPixels: 0, paintGroup: "paper", maskIndex: 0, path: path)
+        return PaintingTemplate(size: size, palette: [colour], paintableAreas: [area],
+                                owners: Array(repeating: 1, count: Int(size.width * size.height)),
+                                inkImageName: "")
+    }
+
     // Exported paths use only M, L, and Z with integer source-image coordinates.
     private static func parsePath(_ source: String) -> CGPath {
         let tokens = source.split(whereSeparator: \.isWhitespace)

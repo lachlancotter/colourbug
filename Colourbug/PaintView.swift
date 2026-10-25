@@ -27,6 +27,16 @@ final class PaintView: UIView {
         let water: Float
     }
 
+    private struct FlowTail {
+        let origin: CGPoint
+        let direction: CGVector
+        let side: CGFloat
+        let length: CGFloat
+        let colour: PaintColour
+        var age: CGFloat = 0
+        var lastPoint: CGPoint
+    }
+
     private let brushWidth: CGFloat = 24
     private let firstContactRadius: CGFloat = 16
     private let tipRadius: CGFloat = 10
@@ -43,19 +53,28 @@ final class PaintView: UIView {
     private var smoothedForce: CGFloat = 1
     private var smoothedTilt: CGFloat = 0
     private var lastResponse = BrushResponse.neutral
+    private var lastDirection = CGVector.zero
+    private var flowTails: [FlowTail] = []
     private var strokeColour: PaintColour
     private let template: PaintingTemplate
     private let session: PaintingSession
+    private let livingFlow: Bool
     var onPaintingChanged: ((Bool) -> Void)?
-    private lazy var paint = WatercolourRenderer(size: bounds.size, host: self, template: template)
+    var canPaintAt: ((CGPoint) -> Bool)?
+    var onPaintSample: ((CGPoint) -> Void)?
+    var onStrokeFinished: (() -> Void)?
+    private lazy var paint = WatercolourRenderer(size: bounds.size, host: self,
+                                                 template: template, livingFlow: livingFlow)
     private let contactSheen = CAGradientLayer()
     private var displayLink: CADisplayLink?
     private var lastTick: CFTimeInterval?
 
-    init(size: CGSize, template: PaintingTemplate, session: PaintingSession) {
+    init(size: CGSize, template: PaintingTemplate, session: PaintingSession,
+         livingFlow: Bool = false) {
         self.template = template
         self.session = session
         self.strokeColour = session.selectedColour
+        self.livingFlow = livingFlow
         super.init(frame: CGRect(origin: .zero, size: size))
         backgroundColor = .clear
         isUserInteractionEnabled = false
@@ -96,7 +115,7 @@ final class PaintView: UIView {
 
     private func startPainting(with touch: UITouch) {
         let point = touch.location(in: self)
-        guard bounds.contains(point) else { return }
+        guard bounds.contains(point), canPaintAt?(point) ?? true else { return }
         paintingTouch = touch
         onPaintingChanged?(true)
         strokeColour = session.selectedColour
@@ -108,6 +127,7 @@ final class PaintView: UIView {
         smoothedForce = 1
         smoothedTilt = 0
         lastResponse = brushResponse(for: touch)
+        lastDirection = .zero
         moveContact(to: point)
     }
 
@@ -139,6 +159,10 @@ final class PaintView: UIView {
     private func addSamples(for touch: UITouch, event: UIEvent?) {
         for sample in event?.coalescedTouches(for: touch) ?? [touch] {
             let point = sample.location(in: self)
+            if !(canPaintAt?(point) ?? true) {
+                finishPainting()
+                return
+            }
             append(point, response: brushResponse(for: sample))
             if !bounds.contains(point) {
                 finishPainting()
@@ -157,6 +181,7 @@ final class PaintView: UIView {
         }
         let direction = CGVector(dx: (point.x - previous.x) / length,
                                  dy: (point.y - previous.y) / length)
+        lastDirection = direction
         if !hasPainted {
             // A loaded brush makes a slightly fuller, richer first contact.
             paint.deposit(at: previous, pigment: 0.12 * lastResponse.pigment,
@@ -171,6 +196,7 @@ final class PaintView: UIView {
             let fraction = walked / length
             let position = CGPoint(x: previous.x + (point.x - previous.x) * fraction,
                                    y: previous.y + (point.y - previous.y) * fraction)
+            onPaintSample?(position)
             strokeDistance += spacing
             let brush = lastResponse.blended(with: response, fraction: fraction)
             let pigmentLoad = Self.pigmentLoad(at: strokeDistance)
@@ -238,9 +264,20 @@ final class PaintView: UIView {
             }
             startAnimation()
         } else if !discardDot, let point = lastPoint {
+            onPaintSample?(point)
             paint.deposit(at: point, pigment: 0.16 * lastResponse.pigment,
                           water: 0.8 * lastResponse.water,
                           radius: brushWidth / 2 * lastResponse.width, colour: strokeColour)
+            startAnimation()
+        }
+        if livingFlow && !discardDot && strokeDistance > 18,
+           let point = lastPoint, lastDirection != .zero {
+            let length = min(120, 55 + strokeDistance * 0.18)
+            for side: CGFloat in [-1, 1] {
+                flowTails.append(FlowTail(origin: point, direction: lastDirection,
+                                          side: side, length: length * (side > 0 ? 1 : 0.72),
+                                          colour: strokeColour, lastPoint: point))
+            }
             startAnimation()
         }
         pendingDeposits.removeAll(keepingCapacity: true)
@@ -250,6 +287,7 @@ final class PaintView: UIView {
         onPaintingChanged?(false)
         lastPoint = nil
         hasPainted = false
+        if !discardDot { onStrokeFinished?() }
     }
 
     private func brushResponse(for sample: UITouch) -> BrushResponse {
@@ -272,11 +310,11 @@ final class PaintView: UIView {
     }
 
     private static func pigmentLoad(at distance: CGFloat) -> Float {
-        0.35 + 0.65 * exp(-Float(distance) / 520)
+        0.55 + 0.45 * exp(-Float(distance) / 760)
     }
 
     private static func waterLoad(at distance: CGFloat) -> Float {
-        0.42 + 0.58 * exp(-Float(distance) / 420)
+        0.55 + 0.45 * exp(-Float(distance) / 680)
     }
 
     private func moveContact(to point: CGPoint) {
@@ -299,12 +337,44 @@ final class PaintView: UIView {
     @objc private func animate(_ link: CADisplayLink) {
         let elapsed = lastTick.map { min(0.05, link.timestamp - $0) } ?? (1.0 / 30.0)
         lastTick = link.timestamp
+        advanceFlowTails(dt: CGFloat(elapsed))
         paint.step(dt: Float(elapsed))
         paint.renderDirtyTiles()
-        if !paint.hasActivePaint {
+        if !paint.hasActivePaint && flowTails.isEmpty {
             link.invalidate()
             displayLink = nil
             lastTick = nil
         }
+    }
+
+    private func advanceFlowTails(dt: CGFloat) {
+        guard !flowTails.isEmpty else { return }
+        for index in flowTails.indices {
+            var tail = flowTails[index]
+            tail.age += dt
+            let progress = min(1, tail.age / 1.15)
+            let bend = tail.side * 21 * sin(.pi * progress)
+            let curl = tail.side * 8 * sin(progress * .pi * 4) * (1 - progress)
+            let sideways = bend + curl
+            let point = CGPoint(
+                x: tail.origin.x + tail.direction.dx * tail.length * progress
+                    - tail.direction.dy * sideways,
+                y: tail.origin.y + tail.direction.dy * tail.length * progress
+                    + tail.direction.dx * sideways)
+            let delta = CGVector(dx: point.x - tail.lastPoint.x,
+                                 dy: point.y - tail.lastPoint.y)
+            let distance = hypot(delta.dx, delta.dy)
+            if bounds.contains(point), distance > 0.01 {
+                let direction = CGVector(dx: delta.dx / distance, dy: delta.dy / distance)
+                paint.deposit(at: point,
+                              pigment: Float(0.025 * (1 - progress)),
+                              water: Float(0.11 * (1 - progress * 0.5)),
+                              radius: 11 + 9 * (1 - progress), direction: direction,
+                              colour: tail.colour)
+            }
+            tail.lastPoint = point
+            flowTails[index] = tail
+        }
+        flowTails.removeAll { $0.age >= 1.15 }
     }
 }

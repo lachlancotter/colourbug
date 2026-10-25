@@ -4,8 +4,11 @@ import SwiftUI
 struct ColourbugApp: App {
     var body: some Scene {
         WindowGroup {
-            PaintingScreen()
+            BlankPaintingCanvas()
                 .preferredColorScheme(.light)
+                .ignoresSafeArea()
+                .statusBarHidden(true)
+                .persistentSystemOverlays(.hidden)
         }
     }
 }

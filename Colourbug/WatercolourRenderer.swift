@@ -4,6 +4,11 @@ import UIKit
 final class WatercolourRenderer {
     // RGB is stored as colour weighted by pigment mass; w is the mass.
     private typealias Pigment = SIMD4<Float>
+    private struct Eddy {
+        let centre: SIMD2<Float> // Grid coordinates.
+        let spin: Float
+        let createdAt: CFTimeInterval
+    }
     private struct AreaMask: Equatable {
         var low: UInt64 = 0
         var high: UInt64 = 0
@@ -23,10 +28,17 @@ final class WatercolourRenderer {
     private static let tileSide = 64
     private static let pixelsPerCell = 2
     private static let wetThreshold: Float = 0.015
-    private static let edgeFeather: Float = 8
-    private static let edgeSettlingRate: Float = 0.3
-    private static let pigmentMixingRate: Float = 3.0
-    private static let evaporationRate: Float = 0.42
+    private static let edgeFeather: Float = 14
+    private static let edgeSettlingRate: Float = 0.2
+    private static let pigmentMixingRate: Float = 1.2
+    private static let evaporationRate: Float = 0.32
+    private static let waterDepositMultiplier: Float = 1.1
+    private static let brushFlowSpeed: Float = 5.2 // Grid cells per second.
+    private static let maximumFlowSpeed: Float = 6.0
+    private static let flowDrag: Float = 0.9
+    private static let eddyRadius: Float = 14 // Grid cells, or 28 paper points.
+    private static let eddyLifetime: CFTimeInterval = 3
+    private static let eddyStrength: Float = 32 // Peak flow is about 12 cells per second.
     private static let outsidePigmentFadeRate: Float = 1.0
     private static let visiblePigmentThreshold: Float = 0.001
     private static let reworkWindow: CFTimeInterval = 2.5
@@ -41,6 +53,8 @@ final class WatercolourRenderer {
         let dryLayer = CALayer()
         let wetLayer = CALayer()
         var water: [Float]
+        // Water-weighted velocity keeps a stroke moving after the brush lifts.
+        var momentum: [SIMD2<Float>]
         var mobile: [Pigment]
         var settled: [Pigment]
         var dry: [Pigment]
@@ -55,6 +69,7 @@ final class WatercolourRenderer {
             self.height = height
             let count = width * height
             water = Array(repeating: 0, count: count)
+            momentum = Array(repeating: .zero, count: count)
             mobile = Array(repeating: .zero, count: count)
             settled = Array(repeating: .zero, count: count)
             dry = Array(repeating: .zero, count: count)
@@ -72,6 +87,7 @@ final class WatercolourRenderer {
     private var tiles: [Int: Tile] = [:]
     private var active = Set<Int>()
     private var activeSpill = Set<Int>()
+    private var eddies: [Eddy] = []
     private var dirtyTiles = Set<Int>()
     private var dirtyDryTiles = Set<Int>()
     private let absorption: [Float]
@@ -80,6 +96,13 @@ final class WatercolourRenderer {
     private let paperWidth: Int
     private let paperHeight: Int
     private let template: PaintingTemplate
+    private let livingFlow: Bool
+    private var wetThreshold: Float { livingFlow ? 0.008 : Self.wetThreshold }
+    private var evaporationRate: Float { livingFlow ? 0.18 : Self.evaporationRate }
+    private var flowDrag: Float { livingFlow ? 0.55 : Self.flowDrag }
+    private var eddyRadius: Float { livingFlow ? 21 : Self.eddyRadius }
+    private var eddyLifetime: CFTimeInterval { livingFlow ? 4.5 : Self.eddyLifetime }
+    private var eddyStrength: Float { livingFlow ? 58 : Self.eddyStrength }
     // A cell can straddle several regions. Shared paint groups have one bit,
     // which lets unlined sky and fur colours blend without an artificial seam.
     private var cellAreaMasks: [AreaMask?]
@@ -87,12 +110,14 @@ final class WatercolourRenderer {
 
     var hasActivePaint: Bool { !active.isEmpty || !activeSpill.isEmpty }
 
-    init(size: CGSize, host: UIView, template: PaintingTemplate) {
+    init(size: CGSize, host: UIView, template: PaintingTemplate,
+         livingFlow: Bool = false) {
         width = Int(ceil(size.width / Self.cellSize))
         height = Int(ceil(size.height / Self.cellSize))
         tilesAcross = Int(ceil(Double(width) / Double(Self.tileSide)))
         self.host = host
         self.template = template
+        self.livingFlow = livingFlow
         cellAreaMasks = Array(repeating: nil, count: width * height)
         var colourMasks: [PaintColourID: AreaMask] = [:]
         for area in template.paintableAreas {
@@ -113,7 +138,8 @@ final class WatercolourRenderer {
                  direction: CGVector = .zero, settledFraction: Float = 0,
                  colour: PaintColour) {
         let now = CACurrentMediaTime()
-        let reach = radius + 6
+        seedEddy(at: point, direction: direction, colour: colour, now: now)
+        let reach = radius + CGFloat(Self.edgeFeather) / 2 + 2
         let minX = max(0, Int(floor((point.x - reach) / Self.cellSize)))
         let maxX = min(width - 1, Int(floor((point.x + reach) / Self.cellSize)))
         let minY = max(0, Int(floor((point.y - reach) / Self.cellSize)))
@@ -134,12 +160,14 @@ final class WatercolourRenderer {
                 let t = max(0, min(1, (edge - Float(distance)) / Self.edgeFeather + 0.5))
                 let coverage = t * t * (3 - 2 * t)
                 guard coverage > 0 else { continue }
+                // Water reaches the soft fringe first; pigment follows as it spreads.
+                let pigmentCoverage = coverage * (0.45 + 0.55 * coverage)
                 let (tile, local, _) = cell(x: x, y: y, create: true)!
                 let ahead = max(0, Float((dx * direction.dx + dy * direction.dy) / radius))
                 let leadingWater = 0.82 + 0.55 * min(1, ahead)
                 if !belongsToColour {
-                    let addedWater = water * coverage * leadingWater
-                    let pigmentAmount = pigment * coverage * (1.12 - 0.35 * paper)
+                    let addedWater = water * Self.waterDepositMultiplier * coverage * leadingWater
+                    let pigmentAmount = pigment * pigmentCoverage * (1.12 - 0.35 * paper)
                     tile.spillWater[local] = min(1.5, tile.spillWater[local] + addedWater)
                     let concentration = pigmentAmount / max(addedWater, 0.001)
                     let acceptedPigment = min(pigmentAmount,
@@ -151,19 +179,29 @@ final class WatercolourRenderer {
                     continue
                 }
                 let previousWater = tile.water[local]
-                let addedWater = water * coverage * leadingWater
-                if previousWater + addedWater >= Self.wetThreshold {
+                let addedWater = water * Self.waterDepositMultiplier * coverage * leadingWater
+                if previousWater + addedWater >= wetThreshold {
                     reworkRecentDry(in: tile, at: local, x: x, y: y, now: now)
                 }
-                if previousWater >= Self.wetThreshold {
+                if previousWater >= wetThreshold {
                     // A pass through the same wash loosens pigment that has not dried yet.
                     let lifted = tile.settled[local] * min(0.85, water * coverage * 3)
                     tile.settled[local] -= lifted
                     tile.mobile[local] += lifted
                 }
                 tile.water[local] = min(1.5, previousWater + addedWater)
+                let brushDirection = SIMD2(Float(direction.dx), Float(direction.dy))
+                if brushDirection != .zero {
+                    tile.momentum[local] += addedWater * brushDirection
+                        * (livingFlow ? 8 : Self.brushFlowSpeed)
+                    let momentum = tile.momentum[local]
+                    let speed = sqrt(momentum.x * momentum.x + momentum.y * momentum.y)
+                    let limit = tile.water[local]
+                        * (livingFlow ? 9 : Self.maximumFlowSpeed)
+                    if speed > limit { tile.momentum[local] *= limit / speed }
+                }
                 let wetness = min(1, previousWater / 0.5)
-                let pigmentAmount = pigment * coverage * (1.12 - 0.35 * paper)
+                let pigmentAmount = pigment * pigmentCoverage * (1.12 - 0.35 * paper)
                 // A wet wash accepts pigment up to the brush's concentration instead
                 // of building a fresh opaque ridge on every overlapping stamp.
                 let concentration = pigmentAmount / max(addedWater, 0.001)
@@ -180,16 +218,64 @@ final class WatercolourRenderer {
         }
     }
 
+    private func seedEddy(at point: CGPoint, direction: CGVector, colour: PaintColour,
+                          now: CFTimeInterval) {
+        guard direction != .zero else { return }
+        let x = Int(floor(point.x / Self.cellSize))
+        let y = Int(floor(point.y / Self.cellSize))
+        guard x >= 0, x < width, y >= 0, y < height,
+              areaMask(x: x, y: y).intersects(colourAreaMasks[colour.id] ?? AreaMask()),
+              let (tile, local, _) = cell(x: x, y: y, create: false),
+              tile.water[local] > 0.12 else { return }
+        let existing = tile.mobile[local] + tile.settled[local]
+        guard existing.w > 0.025 else { return }
+        let colourDifference = abs(existing.x / existing.w - colour.red)
+            + abs(existing.y / existing.w - colour.green)
+            + abs(existing.z / existing.w - colour.blue)
+        guard livingFlow || colourDifference > 0.2 else { return }
+        let centre = SIMD2(Float(point.x / Self.cellSize), Float(point.y / Self.cellSize))
+        let minimumSpacing = eddyRadius * 0.8
+        guard !eddies.contains(where: { eddy in
+            let offset = eddy.centre - centre
+            return now - eddy.createdAt < eddyLifetime
+                && offset.x * offset.x + offset.y * offset.y < minimumSpacing * minimumSpacing
+        }) else { return }
+        // Reverse strokes can turn the little whirlpools the other way.
+        let spin: Float = direction.dx + direction.dy >= 0 ? 1 : -1
+        if eddies.count >= 8 { eddies.removeFirst() }
+        eddies.append(Eddy(centre: centre, spin: spin, createdAt: now))
+    }
+
+    private func eddyVelocity(x: Int, y: Int, now: CFTimeInterval) -> SIMD2<Float> {
+        var velocity = SIMD2<Float>.zero
+        let radiusSquared = eddyRadius * eddyRadius
+        for eddy in eddies {
+            let dx = Float(x) + 0.5 - eddy.centre.x
+            let dy = Float(y) + 0.5 - eddy.centre.y
+            if abs(dx) >= eddyRadius || abs(dy) >= eddyRadius { continue }
+            let distanceSquared = dx * dx + dy * dy
+            if distanceSquared >= radiusSquared { continue }
+            let fade = Float(max(0, 1 - (now - eddy.createdAt) / eddyLifetime))
+            let scale = eddy.spin * eddyStrength * fade
+                * (1 - distanceSquared / radiusSquared) / eddyRadius
+            velocity += SIMD2(-dy, dx) * scale
+        }
+        let speed = sqrt(velocity.x * velocity.x + velocity.y * velocity.y)
+        if speed > 14 { velocity *= 14 / speed }
+        return velocity
+    }
+
     func step(dt: Float) {
         guard hasActivePaint else { return }
         let now = CACurrentMediaTime()
+        eddies.removeAll { now - $0.createdAt >= eddyLifetime }
         let spillFade = exp(-Self.outsidePigmentFadeRate * dt)
         for key in activeSpill {
             let x = key % width
             let y = key / width
             guard let (tile, local, _) = cell(x: x, y: y, create: false) else { continue }
             tile.spill[local] *= spillFade
-            tile.spillWater[local] = max(0, tile.spillWater[local] - dt * Self.evaporationRate)
+            tile.spillWater[local] = max(0, tile.spillWater[local] - dt * evaporationRate)
             if tile.spill[local].w < Self.visiblePigmentThreshold {
                 tile.spill[local] = .zero
                 tile.spillWater[local] = 0
@@ -203,6 +289,7 @@ final class WatercolourRenderer {
             return tile.spill[local].w > 0
         }
         var waterDelta: [Int: Float] = [:]
+        var momentumDelta: [Int: SIMD2<Float>] = [:]
         var pigmentDelta: [Int: Pigment] = [:]
         var settledDelta: [Int: Pigment] = [:]
         var affected = active
@@ -218,8 +305,11 @@ final class WatercolourRenderer {
             let paintable = !sourceAreaMask.isEmpty
             let paper = absorption[key]
             let paperTooth = tooth[key]
-            let evaporation = min(water, dt * Self.evaporationRate * (0.72 + 0.38 * paper))
+            let evaporation = min(water, dt * evaporationRate * (0.72 + 0.38 * paper))
             waterDelta[key, default: 0] -= evaporation
+            let momentum = tile.momentum[local]
+            let velocity = momentum / water + eddyVelocity(x: x, y: y, now: now)
+            momentumDelta[key, default: .zero] -= momentum * (evaporation / water)
 
             // Only the outside of the joined wet region forms a drying edge.
             var wetNeighbours: Float = 0
@@ -232,9 +322,9 @@ final class WatercolourRenderer {
             }
             let boundary = 1 - wetNeighbours / 8
             let settling = paintable
-                ? min(1, dt * (0.12 + 0.15 * paper + 0.35 * paperTooth
-                                 + 0.25 * (1 - min(water, 1))
-                                 + Self.edgeSettlingRate * boundary)) : 0
+                ? min(1, dt * (0.10 + 0.15 * paper + 0.27 * paperTooth
+                                 + 0.18 * (1 - min(water, 1))
+                                 + (livingFlow ? 0.11 : Self.edgeSettlingRate) * boundary)) : 0
             let amount = tile.mobile[local] * settling
             pigmentDelta[key, default: .zero] -= amount
             settledDelta[key, default: .zero] += amount
@@ -252,17 +342,23 @@ final class WatercolourRenderer {
                 let neighbour = cell(x: nx, y: ny, create: false)
                 let otherWater = neighbour.map { $0.0.water[$0.1] } ?? 0
                 let otherPigment = neighbour.map { $0.0.mobile[$0.1].w } ?? 0
-                let otherIsWet = otherWater >= Self.wetThreshold
+                let otherIsWet = otherWater >= wetThreshold
                 let gradient = max(0, water - otherWater)
-                let rate: Float = otherIsWet ? 1.3 + 0.5 * (1 - paper) : 0.95
-                let flow = min(remainingWater, water * 0.16, gradient * dt * rate)
+                let rate: Float = livingFlow
+                    ? (otherIsWet ? 2.6 + 0.5 * (1 - paper) : 2.3)
+                    : (otherIsWet ? 1.7 + 0.5 * (1 - paper) : 1.3)
+                let drift = max(0, velocity.x * Float(offsetX)
+                                    + velocity.y * Float(offsetY))
+                let flow = min(remainingWater, water * 0.42,
+                               gradient * dt * rate + water * drift * dt)
                 // A small transfer to dry paper evaporates immediately; avoid a dry halo.
-                if !otherIsWet && flow < Self.wetThreshold { continue }
+                if !otherIsWet && flow < wetThreshold { continue }
                 let otherConcentration = otherPigment / max(otherWater, 0.1)
-                let mixing = otherIsWet ? dt * Self.pigmentMixingRate * min(water, otherWater)
+                let mixing = otherIsWet ? dt * (livingFlow ? 1.6 : Self.pigmentMixingRate)
+                    * min(water, otherWater)
                     * max(0, concentration - otherConcentration) : 0
-                let carried = min(remainingPigment, tile.mobile[local].w * 0.22,
-                                  concentration * flow * 0.8 + mixing
+                let carried = min(remainingPigment, tile.mobile[local].w * 0.48,
+                                  concentration * flow * 0.95 + mixing
                                   + dt * 0.2 * tile.mobile[local].w
                                   * max(0, tooth[ny * width + nx] - paperTooth)
                                   * min(1, otherWater))
@@ -271,6 +367,9 @@ final class WatercolourRenderer {
                 let target = ny * width + nx
                 waterDelta[key, default: 0] -= flow
                 waterDelta[target, default: 0] += flow
+                let movedMomentum = momentum * (flow / water)
+                momentumDelta[key, default: .zero] -= movedMomentum
+                momentumDelta[target, default: .zero] += movedMomentum
                 let movedPigment = tile.mobile[local] * (carried / max(tile.mobile[local].w, 0.0001))
                 pigmentDelta[key, default: .zero] -= movedPigment
                 pigmentDelta[target, default: .zero] += movedPigment
@@ -288,13 +387,15 @@ final class WatercolourRenderer {
             guard let (tile, local, _) = cell(x: x, y: y, create: false) else { continue }
             let wasDry = tile.water[local] == 0
             tile.water[local] = max(0, tile.water[local] + waterDelta[key, default: 0])
+            tile.momentum[local] = (tile.momentum[local] + momentumDelta[key, default: .zero])
+                * exp(-flowDrag * dt)
             let mobile = tile.mobile[local] + pigmentDelta[key, default: .zero]
             tile.mobile[local] = mobile.w > 0 ? mobile : .zero
             tile.settled[local] += settledDelta[key, default: .zero]
-            if wasDry && tile.water[local] >= Self.wetThreshold {
+            if wasDry && tile.water[local] >= wetThreshold {
                 reworkRecentDry(in: tile, at: local, x: x, y: y, now: now)
             }
-            if tile.water[local] < Self.wetThreshold {
+            if tile.water[local] < wetThreshold {
                 if tile.recentDry[local].w > 0,
                    now - tile.driedAt[local] > Self.reworkWindow {
                     tile.dry[local] += tile.recentDry[local]
@@ -305,6 +406,7 @@ final class WatercolourRenderer {
                 tile.mobile[local] = .zero
                 tile.settled[local] = .zero
                 tile.water[local] = 0
+                tile.momentum[local] = .zero
                 markDirty(x: x, y: y, dry: true)
             } else {
                 active.insert(key)

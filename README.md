@@ -20,7 +20,9 @@ Our goal is to create **a little happy place** — somewhere to slow down, unwin
 
 ## Current state
 
-The app opens on a textured paper canvas with the puppy god illustration. Its ink floats above the paint, while 102 mapped colour regions guide painting beneath it. The palette comes from the artwork data; scroll through its swatches and tap one to select a colour. Visible ink regions highlight when their colour is selected. The unlined sky zones share a paint group, allowing three sky colours to blend without a drawn divider; the puppy's fur colours also share a group for softer transitions. Drag one finger or an Apple Pencil to paint. Paint that wanders into another paint group or off the mapped artwork appears briefly, then fades away without changing paint already underneath. Fresh paint spreads subtly and stays workable for several seconds, while dry marks remain underneath new paint. A long stroke gradually uses up water and pigment, paper grain becomes clearer as pigment settles, and Pencil force and tilt make small changes to the brush. Use two fingers to pan or pinch to zoom; incidental finger contact does not interrupt a Pencil stroke. Paint and paper move together as one sheet. Persistence remains a project goal.
+The app currently opens to **only a full-screen textured sheet**. Paint on it with a finger or Apple Pencil using a single indigo pigment. The sheet is one continuous paint area: water and pigment can spread freely, remain mobile longer, form small eddies, and curl beyond the end of a stroke. This isolated study is for judging the feel of the paint before adding scene objects, colour selection, or progression back into the experience. Painting is reset when the canvas size changes or the app relaunches.
+
+The earlier puppy god canvas and its region-based painting implementation remain in the source for comparison, but are not shown in the current app.
 
 The bundled texture is `Colourbug/Resources/WatercolourWhisper.png`.
 
@@ -38,4 +40,4 @@ This builds the app, installs it on the first connected iPad, and opens it. In C
 sudo xcodebuild -license
 ```
 
-The app entry point is `Colourbug/ColourbugApp.swift`. `Colourbug/PaperCanvas.swift` owns the palette, ink overlay, pan, and zoom; `Colourbug/PaintView.swift` owns painting input; `Colourbug/WatercolourRenderer.swift` simulates and draws paint; `Colourbug/PaintingTemplate.swift` loads the region map and palette from `Artwork/puppy-god-regions.json`; and `Colourbug/ImagePaperStrategy.swift` displays the textured sheet. See `Artwork/README.md` for the source illustration, region paths, and asset generator.
+The app entry point is `Colourbug/ColourbugApp.swift`. `Colourbug/BlankPaintingCanvas.swift` displays the sheet and forwards touches; `Colourbug/PaintView.swift` owns painting input and curling flow; `Colourbug/WatercolourRenderer.swift` simulates and draws paint; `Colourbug/PaintingTemplate.swift` defines the continuous surface and loads the earlier region map; and `Colourbug/ImagePaperStrategy.swift` displays the texture. The previous region-based canvas remains in `Colourbug/PaperCanvas.swift`.
