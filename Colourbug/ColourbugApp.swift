@@ -4,7 +4,7 @@ import SwiftUI
 struct ColourbugApp: App {
     var body: some Scene {
         WindowGroup {
-            BlankPaintingCanvas()
+            FlowerPaintingCanvas()
                 .preferredColorScheme(.light)
                 .ignoresSafeArea()
                 .statusBarHidden(true)

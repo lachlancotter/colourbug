@@ -69,6 +69,15 @@ final class PaintView: UIView {
     private let contactSheen = CAGradientLayer()
     private var displayLink: CADisplayLink?
     private var lastTick: CFTimeInterval?
+#if DEBUG
+    private var performanceStartedAt: CFTimeInterval?
+    private var performanceFrames = 0
+    private var simulationTime: CFTimeInterval = 0
+    private var renderTime: CFTimeInterval = 0
+    private var slowestFrame: CFTimeInterval = 0
+    private var peakWetCells = 0
+    private var peakDirtyTiles = 0
+#endif
 
     init(size: CGSize, template: PaintingTemplate, session: PaintingSession,
          behaviour: PaintBehaviour = .classic) {
@@ -102,19 +111,19 @@ final class PaintView: UIView {
         lastTick = nil
     }
 
+    func hasCompletedFlower() -> Bool { paint.hasCompletedFlower() }
+
     func handleTouchesBegan(_ touches: Set<UITouch>) {
         activeTouches.formUnion(touches)
         if let pencil = touches.first(where: { $0.type == .pencil }) {
             finishPainting(discardDot: true)
             startPainting(with: pencil)
-            paint.renderDirtyTiles()
             return
         }
         if paintingTouch?.type == .pencil { return }
         let fingers = activeTouches.filter { $0.type == .direct }
         guard fingers.count == 1, let touch = touches.first(where: { $0.type == .direct }) else {
             finishPainting(discardDot: true)
-            paint.renderDirtyTiles()
             return
         }
         startPainting(with: touch)
@@ -144,14 +153,12 @@ final class PaintView: UIView {
               (touch.type == .pencil || activeTouches.filter { $0.type == .direct }.count == 1),
               touches.contains(touch) else { return }
         addSamples(for: touch, event: event)
-        paint.renderDirtyTiles()
     }
 
     func handleTouchesEnded(_ touches: Set<UITouch>, event: UIEvent?) {
         if let touch = paintingTouch, touches.contains(touch) {
             addSamples(for: touch, event: event)
             finishPainting()
-            paint.renderDirtyTiles()
         }
         activeTouches.subtract(touches)
     }
@@ -159,7 +166,6 @@ final class PaintView: UIView {
     func handleTouchesCancelled(_ touches: Set<UITouch>) {
         if let touch = paintingTouch, touches.contains(touch) {
             finishPainting()
-            paint.renderDirtyTiles()
         }
         activeTouches.subtract(touches)
     }
@@ -345,15 +351,59 @@ final class PaintView: UIView {
     @objc private func animate(_ link: CADisplayLink) {
         let elapsed = lastTick.map { min(0.05, link.timestamp - $0) } ?? (1.0 / 30.0)
         lastTick = link.timestamp
+#if DEBUG
+        let frameStarted = CACurrentMediaTime()
+#endif
         advanceFlowTails(dt: CGFloat(elapsed))
         paint.step(dt: Float(elapsed))
+#if DEBUG
+        let simulationFinished = CACurrentMediaTime()
+        let dirtyTileCount = paint.dirtyTileCount
+#endif
         paint.renderDirtyTiles()
+#if DEBUG
+        recordPerformance(frameStarted: frameStarted,
+                          simulationFinished: simulationFinished,
+                          renderFinished: CACurrentMediaTime(),
+                          dirtyTiles: dirtyTileCount)
+#endif
         if !paint.hasActivePaint && flowTails.isEmpty {
             link.invalidate()
             displayLink = nil
             lastTick = nil
         }
     }
+
+#if DEBUG
+    private func recordPerformance(frameStarted: CFTimeInterval,
+                                   simulationFinished: CFTimeInterval,
+                                   renderFinished: CFTimeInterval,
+                                   dirtyTiles: Int) {
+        performanceStartedAt = performanceStartedAt ?? frameStarted
+        performanceFrames += 1
+        simulationTime += simulationFinished - frameStarted
+        renderTime += renderFinished - simulationFinished
+        slowestFrame = max(slowestFrame, renderFinished - frameStarted)
+        peakWetCells = max(peakWetCells, paint.activeCellCount)
+        peakDirtyTiles = max(peakDirtyTiles, dirtyTiles)
+        guard let started = performanceStartedAt,
+              renderFinished - started >= 2 else { return }
+        let count = Double(performanceFrames)
+        print(String(format: "PaintPerf step %.1fms render %.1fms max %.1fms wet %d dirty %d tiles %d",
+                     1000 * simulationTime / count,
+                     1000 * renderTime / count,
+                     1000 * slowestFrame,
+                     peakWetCells, peakDirtyTiles, paint.allocatedTileCount))
+        performanceStartedAt = renderFinished
+        performanceFrames = 0
+        simulationTime = 0
+        renderTime = 0
+        slowestFrame = 0
+        peakWetCells = 0
+        peakDirtyTiles = 0
+    }
+
+#endif
 
     private func advanceFlowTails(dt: CGFloat) {
         guard !flowTails.isEmpty else { return }

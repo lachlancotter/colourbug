@@ -18,7 +18,11 @@
 		A00000000000000000000028 /* puppy-god-ink.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000027 /* puppy-god-ink.png */; };
 		A0000000000000000000002A /* puppy-god-owners.bin in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000029 /* puppy-god-owners.bin */; };
 		A0000000000000000000002C /* ColourFocusGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000002B /* ColourFocusGuide.swift */; };
-		A0000000000000000000002E /* BlankPaintingCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000002D /* BlankPaintingCanvas.swift */; };
+		A0000000000000000000002E /* FlowerPaintingCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000002D /* FlowerPaintingCanvas.swift */; };
+		A00000000000000000000034 /* FlowerDepthArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000033 /* FlowerDepthArtwork.swift */; };
+		A00000000000000000000036 /* FlowerRegions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000035 /* FlowerRegions.swift */; };
+		A00000000000000000000030 /* StoryFlowerInk.png in Resources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000002F /* StoryFlowerInk.png */; };
+		A00000000000000000000032 /* StoryFlowerMask.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000031 /* StoryFlowerMask.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,7 +38,11 @@
 		A00000000000000000000027 /* puppy-god-ink.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = ../../Artwork/puppy-god-ink.png; sourceTree = "<group>"; };
 		A00000000000000000000029 /* puppy-god-owners.bin */ = {isa = PBXFileReference; lastKnownFileType = file; path = ../../Artwork/puppy-god-owners.bin; sourceTree = "<group>"; };
 		A0000000000000000000002B /* ColourFocusGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColourFocusGuide.swift; sourceTree = "<group>"; };
-		A0000000000000000000002D /* BlankPaintingCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlankPaintingCanvas.swift; sourceTree = "<group>"; };
+		A0000000000000000000002D /* FlowerPaintingCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowerPaintingCanvas.swift; sourceTree = "<group>"; };
+		A00000000000000000000033 /* FlowerDepthArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowerDepthArtwork.swift; sourceTree = "<group>"; };
+		A00000000000000000000035 /* FlowerRegions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowerRegions.swift; sourceTree = "<group>"; };
+		A0000000000000000000002F /* StoryFlowerInk.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = StoryFlowerInk.png; sourceTree = "<group>"; };
+		A00000000000000000000031 /* StoryFlowerMask.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = StoryFlowerMask.png; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -56,7 +64,9 @@
 				A00000000000000000000021 /* WatercolourRenderer.swift */,
 				A00000000000000000000023 /* PaintingTemplate.swift */,
 				A0000000000000000000002B /* ColourFocusGuide.swift */,
-				A0000000000000000000002D /* BlankPaintingCanvas.swift */,
+				A0000000000000000000002D /* FlowerPaintingCanvas.swift */,
+				A00000000000000000000033 /* FlowerDepthArtwork.swift */,
+				A00000000000000000000035 /* FlowerRegions.swift */,
 				A00000000000000000000018 /* Resources */,
 			);
 			path = Colourbug;
@@ -66,6 +76,8 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000015 /* WatercolourWhisper.png */,
+				A0000000000000000000002F /* StoryFlowerInk.png */,
+				A00000000000000000000031 /* StoryFlowerMask.png */,
 				A00000000000000000000025 /* puppy-god-regions.json */,
 				A00000000000000000000027 /* puppy-god-ink.png */,
 				A00000000000000000000029 /* puppy-god-owners.bin */,
@@ -144,7 +156,9 @@
 				A00000000000000000000022 /* WatercolourRenderer.swift in Sources */,
 				A00000000000000000000024 /* PaintingTemplate.swift in Sources */,
 				A0000000000000000000002C /* ColourFocusGuide.swift in Sources */,
-				A0000000000000000000002E /* BlankPaintingCanvas.swift in Sources */,
+				A0000000000000000000002E /* FlowerPaintingCanvas.swift in Sources */,
+				A00000000000000000000034 /* FlowerDepthArtwork.swift in Sources */,
+				A00000000000000000000036 /* FlowerRegions.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -156,6 +170,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000016 /* WatercolourWhisper.png in Resources */,
+				A00000000000000000000030 /* StoryFlowerInk.png in Resources */,
+				A00000000000000000000032 /* StoryFlowerMask.png in Resources */,
 				A00000000000000000000026 /* puppy-god-regions.json in Resources */,
 				A00000000000000000000028 /* puppy-god-ink.png in Resources */,
 				A0000000000000000000002A /* puppy-god-owners.bin in Resources */,
@@ -200,6 +216,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				TARGETED_DEVICE_FAMILY = 2;
 			};
 			name = Debug;
