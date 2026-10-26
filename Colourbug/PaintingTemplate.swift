@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import UIKit
 
 struct PaintingTemplate {
     struct Area {
@@ -19,6 +20,8 @@ struct PaintingTemplate {
     // in paintableAreas. It is exported alongside the SVG paths from one source.
     let owners: [UInt8]
     let inkImageName: String
+    // Optional alpha mask for paint that may flow freely while wet but dries clear outside.
+    let dryClipMask: [UInt8]?
 
     func areaIndex(at point: CGPoint) -> Int? {
         let x = Int(floor(point.x))
@@ -89,8 +92,62 @@ struct PaintingTemplate {
         precondition(areas.allSatisfy { asset.palette[$0.colourID] != nil })
         return PaintingTemplate(size: CGSize(width: asset.size.width, height: asset.size.height),
                                 palette: palette, paintableAreas: areas, owners: owners,
-                                inkImageName: "puppy-god-ink")
+                                inkImageName: "puppy-god-ink", dryClipMask: nil)
     }()
+
+    // One continuous area allows pigment and water to travel anywhere on the sheet.
+    static func blankPaper(size: CGSize) -> PaintingTemplate {
+        let colour = PaintColour(id: "ink", name: "Indigo",
+                                 red: 0.25, green: 0.38, blue: 0.69)
+        let path = CGPath(rect: CGRect(origin: .zero, size: size), transform: nil)
+        let area = Area(id: "paper", colourID: colour.id, boundary: "none",
+                        featherPixels: 0, paintGroup: "paper", maskIndex: 0, path: path)
+        return PaintingTemplate(size: size, palette: [colour], paintableAreas: [area],
+                                owners: Array(repeating: 1, count: Int(size.width * size.height)),
+                                inkImageName: "", dryClipMask: nil)
+    }
+
+    static func flowerFrame(in size: CGSize, imageSize: CGSize) -> CGRect {
+        let aspect = imageSize.width / imageSize.height
+        let width = min(size.width * 0.78, size.height * 0.64 * aspect)
+        let height = width / aspect
+        return CGRect(x: (size.width - width) / 2,
+                      y: (size.height - height) / 2,
+                      width: width, height: height)
+    }
+
+    // The filled extraction supplies the flower silhouette; the transparent
+    // ink layer adds its refined stem tip. Only their alpha is used here.
+    static func flower(size: CGSize) -> PaintingTemplate {
+        guard let silhouette = UIImage(named: "StoryFlowerMask")?.cgImage,
+              let ink = UIImage(named: "StoryFlowerInk")?.cgImage else {
+            fatalError("Missing flower clipping assets")
+        }
+        let width = Int(size.width)
+        let height = Int(size.height)
+        let frame = flowerFrame(in: size,
+                                imageSize: CGSize(width: ink.width, height: ink.height))
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let context = CGContext(data: &pixels, width: width, height: height,
+                                      bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                                          | CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            fatalError("Could not render flower clipping mask")
+        }
+        context.interpolationQuality = .high
+        context.draw(silhouette, in: frame)
+        context.draw(ink, in: frame)
+        let clipMask = stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] }
+        let palette = FlowerRegion.allCases.map(\.colour)
+        let colour = palette[0]
+        let area = Area(id: "paper", colourID: colour.id, boundary: "none",
+                        featherPixels: 0, paintGroup: "paper", maskIndex: 0,
+                        path: CGPath(rect: CGRect(origin: .zero, size: size), transform: nil))
+        return PaintingTemplate(size: size, palette: palette, paintableAreas: [area],
+                                owners: Array(repeating: 1, count: width * height),
+                                inkImageName: "StoryFlowerInk", dryClipMask: clipMask)
+    }
 
     // Exported paths use only M, L, and Z with integer source-image coordinates.
     private static func parsePath(_ source: String) -> CGPath {

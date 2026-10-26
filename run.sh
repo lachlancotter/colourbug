@@ -14,9 +14,12 @@ case "${1:---ipad}" in
             device_list=$(mktemp)
             trap 'rm -f "$device_list"' EXIT
             xcrun devicectl list devices \
-                --filter "hardwareProperties.deviceType == 'iPad' AND connectionProperties.tunnelState == 'connected'" \
                 --json-output "$device_list" >/dev/null
-            device_id=$(jq -r '.result.devices[0].hardwareProperties.udid // empty' "$device_list")
+            device_id=$(jq -r '[.result.devices[] | select(.hardwareProperties.deviceType == "iPad")]
+                | sort_by(if .connectionProperties.tunnelState == "connected" then 0
+                          elif .connectionProperties.transportType == "wired" then 1
+                          else 2 end)
+                | .[0].hardwareProperties.udid // empty' "$device_list")
         fi
         if [[ -z "$device_id" ]]; then
             echo "No connected iPad is available. Connect and unlock an iPad, or run ./run.sh --simulator." >&2
@@ -29,6 +32,8 @@ case "${1:---ipad}" in
             -configuration Debug \
             -destination "platform=iOS,id=$device_id" \
             -derivedDataPath .context/DerivedDataDevice \
+            -allowProvisioningUpdates \
+            CODE_SIGN_STYLE=Automatic \
             build
 
         xcrun devicectl device install app --device "$device_id" \
